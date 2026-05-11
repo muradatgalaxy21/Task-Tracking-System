@@ -1,26 +1,403 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ------------------------------------------------------------------ */
+/* AI & Beyond Evaluator: Notion-Inspired Warm Light Theme             */
+/* Palette: #fffdf2 (off-white), #fceeb5 (yellow), #fcb1b1 (pink),    */
+/*          #e06b6b (salmon). Clean, minimal, Notion-like aesthetic.    */
+/* ------------------------------------------------------------------ */
+
+@theme {
+  /* Primary warm palette */
+  --color-warm-50: #fffdf2;
+  --color-warm-100: #fef9e1;
+  --color-warm-200: #fceeb5;
+  --color-warm-300: #fcb1b1;
+  --color-warm-400: #e06b6b;
+  --color-warm-500: #c85555;
+
+  /* Neutral tones for text, borders, backgrounds */
+  --color-neutral-50: #fafaf9;
+  --color-neutral-100: #f5f5f4;
+  --color-neutral-200: #e7e5e4;
+  --color-neutral-300: #d6d3d1;
+  --color-neutral-400: #a8a29e;
+  --color-neutral-500: #78716c;
+  --color-neutral-600: #57534e;
+  --color-neutral-700: #44403c;
+  --color-neutral-800: #292524;
+  --color-neutral-900: #1c1917;
+
+  /* Sidebar */
+  --color-sidebar-bg: #f7f7f5;
+  --color-sidebar-hover: #efefed;
+  --color-sidebar-active: #e8e8e5;
+
+  /* Status colors */
+  --color-status-todo: #91918e;
+  --color-status-progress: #337ea9;
+  --color-status-review: #cb912f;
+  --color-status-done: #448361;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Base styles */
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #ffffff;
+  color: #37352f;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar (subtle, Notion-style) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(55, 53, 47, 0.12);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(55, 53, 47, 0.2);
+  background-clip: content-box;
+}
+
+/* ------------------------------------------------------------------ */
+/* Card styles                                                         */
+/* ------------------------------------------------------------------ */
+
+.glass-card {
+  background: #ffffff;
+  border: 1px solid rgba(55, 53, 47, 0.09);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.glass-card-hover {
+  background: #ffffff;
+  border: 1px solid rgba(55, 53, 47, 0.09);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+
+.glass-card-hover:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: rgba(55, 53, 47, 0.16);
+}
+
+/* Background gradient for pages (very subtle warm tint) */
+.bg-gradient-radial {
+  background: linear-gradient(
+    180deg,
+    #fffdf2 0%,
+    #ffffff 50%,
+    #fefefe 100%
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Status badge colors                                                 */
+/* ------------------------------------------------------------------ */
+
+.status-todo {
+  background: rgba(145, 145, 142, 0.12);
+  color: #787774;
+}
+.status-in-progress {
+  background: rgba(51, 126, 169, 0.12);
+  color: #337ea9;
+}
+.status-in-review {
+  background: rgba(203, 145, 47, 0.12);
+  color: #9f6b16;
+}
+.status-completed {
+  background: rgba(68, 131, 97, 0.12);
+  color: #448361;
+}
+
+/* ------------------------------------------------------------------ */
+/* Input styling                                                       */
+/* ------------------------------------------------------------------ */
+
+.glass-input {
+  background: #ffffff;
+  border: 1px solid rgba(55, 53, 47, 0.16);
+  border-radius: 0.5rem;
+  color: #37352f;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.875rem;
+  transition: all 0.15s ease;
+  outline: none;
+  width: 100%;
+}
+.glass-input:focus {
+  border-color: #e06b6b;
+  box-shadow: 0 0 0 3px rgba(224, 107, 107, 0.12);
+}
+.glass-input::placeholder {
+  color: rgba(55, 53, 47, 0.4);
+}
+
+/* ------------------------------------------------------------------ */
+/* Button styles                                                       */
+/* ------------------------------------------------------------------ */
+
+.btn-primary {
+  background: #e06b6b;
+  color: white;
+  padding: 0.55rem 1.25rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-primary:hover {
+  background: #c85555;
+  box-shadow: 0 2px 8px rgba(224, 107, 107, 0.25);
+}
+.btn-primary:active {
+  transform: scale(0.98);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #37352f;
+  padding: 0.55rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  border: 1px solid rgba(55, 53, 47, 0.16);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-ghost:hover {
+  background: rgba(55, 53, 47, 0.04);
+  border-color: rgba(55, 53, 47, 0.3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Animations                                                          */
+/* ------------------------------------------------------------------ */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.35s ease-out;
+}
+
+/* Skeleton loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(55, 53, 47, 0.04) 25%,
+    rgba(55, 53, 47, 0.08) 50%,
+    rgba(55, 53, 47, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.375rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Modal overlay                                                       */
+/* ------------------------------------------------------------------ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(3px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ------------------------------------------------------------------ */
+/* Select dropdown                                                     */
+/* ------------------------------------------------------------------ */
+
+.glass-select {
+  background: #ffffff;
+  border: 1px solid rgba(55, 53, 47, 0.16);
+  border-radius: 0.5rem;
+  color: #37352f;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  width: 100%;
+}
+.glass-select:focus {
+  border-color: #e06b6b;
+  box-shadow: 0 0 0 3px rgba(224, 107, 107, 0.12);
+}
+.glass-select option {
+  background: #ffffff;
+  color: #37352f;
+}
+
+/* ------------------------------------------------------------------ */
+/* Notion-style data table                                             */
+/* ------------------------------------------------------------------ */
+
+.notion-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.notion-table th {
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: rgba(55, 53, 47, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(55, 53, 47, 0.09);
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  white-space: nowrap;
+}
+
+.notion-table td {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border-bottom: 1px solid rgba(55, 53, 47, 0.06);
+  vertical-align: middle;
+}
+
+.notion-table tr:hover td {
+  background: rgba(55, 53, 47, 0.02);
+}
+
+.notion-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Priority badges                                                     */
+/* ------------------------------------------------------------------ */
+
+.priority-high {
+  background: rgba(224, 107, 107, 0.12);
+  color: #c85555;
+}
+.priority-medium {
+  background: rgba(203, 145, 47, 0.12);
+  color: #9f6b16;
+}
+.priority-low {
+  background: rgba(51, 126, 169, 0.12);
+  color: #337ea9;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sidebar styling                                                     */
+/* ------------------------------------------------------------------ */
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  color: rgba(55, 53, 47, 0.65);
+  transition: all 0.1s ease;
+  cursor: pointer;
+  text-decoration: none;
+}
+.sidebar-item:hover {
+  background: rgba(55, 53, 47, 0.04);
+  color: #37352f;
+}
+.sidebar-item.active {
+  background: rgba(224, 107, 107, 0.08);
+  color: #e06b6b;
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tooltip                                                             */
+/* ------------------------------------------------------------------ */
+
+.tooltip {
+  position: relative;
+}
+.tooltip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  padding: 4px 10px;
+  background: #37352f;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  color: #fff;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.tooltip:hover::after {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* Kanban column (kept for backward compat, restyled)                  */
+/* ------------------------------------------------------------------ */
+
+.kanban-column {
+  background: rgba(55, 53, 47, 0.02);
+  border: 1px solid rgba(55, 53, 47, 0.06);
+  border-radius: 0.75rem;
+  min-height: 400px;
+}
+
+/* Hide scrollbar utility */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }

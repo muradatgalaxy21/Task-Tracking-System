@@ -1,0 +1,5 @@
+# This is a Next.js (Node.js) project.
+# Dependencies are managed via package.json and npm.
+# Run "npm install" to install all dependencies.
+#
+# No Python packages are required for this project.
