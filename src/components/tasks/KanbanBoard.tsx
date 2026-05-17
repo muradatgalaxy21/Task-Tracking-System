@@ -1,7 +1,7 @@
 "use client";
 
-// Kanban board view: 4 columns mapped to the task status pipeline.
-// "Todo" is displayed as "Backlog" and "In Review" as "Review" per agency convention.
+// Kanban board: one column per status in the task pipeline.
+// "Todo" displays as "Backlog", "In Review" as "Review" per agency convention.
 
 import type { TaskLedger, Profile, TaskStatus } from "@/lib/types";
 import TaskCard from "@/components/tasks/TaskCard";
@@ -13,7 +13,6 @@ interface KanbanBoardProps {
   onOpenPanel: (task: TaskLedger) => void;
 }
 
-// Column definitions: status value → display label + color scheme
 const COLUMNS: {
   status: TaskStatus;
   label: string;
@@ -49,19 +48,24 @@ const COLUMNS: {
     headerColor: "text-green-700",
     bgColor: "bg-green-50/30",
   },
+  {
+    status: "Discarded",
+    label: "Discarded",
+    dotColor: "#b0a9a2",
+    headerColor: "text-neutral-400",
+    bgColor: "bg-neutral-100/50",
+  },
 ];
 
 export default function KanbanBoard({ tasks, members, onUpdate, onOpenPanel }: KanbanBoardProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+    // 5-column grid on extra-large screens, collapsing on smaller viewports
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 items-start">
       {COLUMNS.map((col) => {
         const colTasks = tasks.filter((t) => t.status === col.status);
 
         return (
-          <div
-            key={col.status}
-            className={`kanban-column flex flex-col ${col.bgColor}`}
-          >
+          <div key={col.status} className={`kanban-column flex flex-col ${col.bgColor}`}>
             {/* Column header */}
             <div className="flex items-center justify-between px-3 py-2.5 border-b border-neutral-100/80">
               <div className="flex items-center gap-2">

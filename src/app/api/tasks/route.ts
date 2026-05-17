@@ -8,8 +8,7 @@ import { STATUS_LABELS } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-// Verify the current user is a member of the given workspace.
-// Returns the membership record or null.
+// Returns the WorkspaceMember record or null if the user is not in the workspace.
 async function getWorkspaceMembership(workspaceId: string, userId: string) {
   return prisma.workspaceMember.findUnique({
     where: { workspace_id_user_id: { workspace_id: workspaceId, user_id: userId } },
@@ -25,14 +24,13 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const workspace_id = searchParams.get("workspaceId");
-  const status = searchParams.get("status");
+  const status       = searchParams.get("status");
 
-  // No workspace selected — return empty rather than leaking cross-workspace data
+  // Return empty rather than leaking cross-workspace data when no workspace is selected
   if (!workspace_id) {
     return NextResponse.json([]);
   }
 
-  // Enforce workspace membership before returning any data
   const membership = await getWorkspaceMembership(workspace_id, session.user.id);
   if (!membership) {
     return NextResponse.json({ error: "Not a member of this workspace" }, { status: 403 });
@@ -58,7 +56,7 @@ export async function GET(req: Request) {
   }
 }
 
-// POST /api/tasks - Create a new task
+// POST /api/tasks - Create a new task (Manager or above only)
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -84,12 +82,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // Verify workspace membership when a workspace is specified
+    const globalRole = session.user.role || "Member";
+    let effectiveRole = globalRole;
+
     if (workspace_id) {
       const membership = await getWorkspaceMembership(workspace_id, session.user.id);
       if (!membership) {
         return NextResponse.json({ error: "Not a member of this workspace" }, { status: 403 });
       }
+      effectiveRole = resolveEffectiveRole(globalRole, membership.role);
+    }
+
+    // Only Managers and above can create tasks
+    if (!hasMinimumRole(effectiveRole, "Manager")) {
+      return NextResponse.json(
+        { error: "Only Managers and above can create tasks" },
+        { status: 403 }
+      );
     }
 
     const task = await prisma.taskLedger.create({
@@ -117,7 +126,7 @@ export async function POST(req: Request) {
   }
 }
 
-// PATCH /api/tasks - Update task fields
+// PATCH /api/tasks - Update task fields with granular permission checks
 export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -128,6 +137,7 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const {
       task_id,
+      title,
       status,
       multiplier_earned,
       description,
@@ -147,19 +157,16 @@ export async function PATCH(req: Request) {
 
     const globalRole = session.user.role || "Member";
 
-    // Fetch the current task to check workspace membership and review lock status
     const currentTask = await prisma.taskLedger.findUnique({
       where: { task_id },
-      select: { status: true, workspace_id: true },
+      select: { status: true, workspace_id: true, assignee_id: true },
     });
 
     if (!currentTask) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
-    // Effective role: higher of global role and workspace-local role.
-    // This lets a workspace Admin/Owner act with admin rights even if their
-    // global User.role is Member.
+    // Resolve effective role (workspace role takes precedence if higher)
     let effectiveRole = globalRole;
     if (currentTask.workspace_id) {
       const membership = await getWorkspaceMembership(currentTask.workspace_id, session.user.id);
@@ -169,30 +176,61 @@ export async function PATCH(req: Request) {
       effectiveRole = resolveEffectiveRole(globalRole, membership.role);
     }
 
-    // Review lock: Members cannot modify any field on a task that is In Review
-    if (currentTask.status === "In Review" && !hasMinimumRole(effectiveRole, "Admin")) {
+    const isAssignee = currentTask.assignee_id === session.user.id;
+    const isAdmin    = hasMinimumRole(effectiveRole, "Admin");
+    const isManager  = hasMinimumRole(effectiveRole, "Manager");
+
+    // Review lock: only Admins can make any change once a task is In Review
+    if (currentTask.status === "In Review" && !isAdmin) {
       return NextResponse.json(
         { error: "This task is locked for review. Only Admins can make changes." },
         { status: 403 }
       );
     }
 
-    // Only Admin/Owner can mark tasks as Completed
-    if (status === "Completed" && !hasMinimumRole(effectiveRole, "Admin")) {
+    // Title editing is restricted to Managers and above
+    if (title !== undefined && !isManager) {
       return NextResponse.json(
-        { error: "Only Admins and Owners can mark tasks as Completed" },
+        { error: "Only Managers and above can edit the task title" },
         { status: 403 }
       );
     }
 
-    const validStatuses = ["Todo", "In Progress", "In Review", "Completed"];
-    if (status && !validStatuses.includes(status)) {
-      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    // Metadata editing (description, notes, etc.) requires at least Member rank,
+    // and only the assignee or an Admin can do it
+    const isEditingMetadata = [
+      description, technical_requirements, architecture_notes,
+      estimated_hours, actual_hours, attachments, ai_model_used,
+      benchmark_score, repo_link,
+    ].some((v) => v !== undefined);
+
+    if (isEditingMetadata && !isAdmin && !isAssignee) {
+      return NextResponse.json(
+        { error: "Only the assignee or an Admin can edit task metadata" },
+        { status: 403 }
+      );
+    }
+
+    // Status transition rules
+    if (status !== undefined) {
+      const validStatuses = ["Todo", "In Progress", "In Review", "Completed", "Discarded"];
+      if (!validStatuses.includes(status)) {
+        return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+      }
+
+      // Only Admin/Owner can move to Completed or Discarded (terminal states)
+      if ((status === "Completed" || status === "Discarded") && !isAdmin) {
+        return NextResponse.json(
+          { error: "Only Admins and Owners can set Completed or Discarded status" },
+          { status: 403 }
+        );
+      }
     }
 
     const updatedTask = await prisma.taskLedger.update({
       where: { task_id },
       data: {
+        ...(title !== undefined ? { title } : {}),
         ...(status !== undefined ? { status } : {}),
         ...(multiplier_earned !== undefined ? { multiplier_earned } : {}),
         ...(status === "Completed" ? { completed_at: new Date() } : {}),
@@ -215,8 +253,8 @@ export async function PATCH(req: Request) {
         select: { full_name: true, email: true },
       });
       const actor_name = dbUser?.full_name || dbUser?.email || "Unknown";
-      const fromLabel = STATUS_LABELS[currentTask.status] ?? currentTask.status;
-      const toLabel = STATUS_LABELS[status] ?? status;
+      const fromLabel  = STATUS_LABELS[currentTask.status] ?? currentTask.status;
+      const toLabel    = STATUS_LABELS[status] ?? status;
 
       await prisma.taskActivity.create({
         data: {
@@ -237,7 +275,10 @@ export async function PATCH(req: Request) {
   }
 }
 
-// DELETE /api/tasks?id=<task_id> - Delete a task (Admin/Owner at global or workspace level)
+// DELETE /api/tasks?id=<task_id>
+// Rules:
+//   - Admins/Owners can always delete.
+//   - Assignees (Member or Manager) can delete only if the task is not yet In Review/Completed/Discarded.
 export async function DELETE(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -254,7 +295,7 @@ export async function DELETE(req: Request) {
   try {
     const task = await prisma.taskLedger.findUnique({
       where: { task_id: id },
-      select: { workspace_id: true },
+      select: { workspace_id: true, assignee_id: true, status: true },
     });
 
     if (!task) {
@@ -272,8 +313,20 @@ export async function DELETE(req: Request) {
       effectiveRole = resolveEffectiveRole(globalRole, membership.role);
     }
 
-    if (!hasMinimumRole(effectiveRole, "Admin")) {
-      return NextResponse.json({ error: "Forbidden: requires Admin role" }, { status: 403 });
+    const isAdmin    = hasMinimumRole(effectiveRole, "Admin");
+    const isManager  = hasMinimumRole(effectiveRole, "Manager");
+    const isAssignee = task.assignee_id === session.user.id;
+    // Deletion is locked once the task enters review or a terminal state
+    const isLocked   = ["In Review", "Completed", "Discarded"].includes(task.status);
+
+    if (!isAdmin) {
+      // Members cannot delete tasks at all; Managers can delete their own unlocked tasks
+      if (!isManager || !isAssignee || isLocked) {
+        return NextResponse.json(
+          { error: "Deletion is not permitted for this task at its current status" },
+          { status: 403 }
+        );
+      }
     }
 
     await prisma.taskLedger.delete({ where: { task_id: id } });

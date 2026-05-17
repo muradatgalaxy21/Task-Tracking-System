@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import type { TaskLedger, Profile } from "@/lib/types";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { getMultiplier } from "@/lib/calculations";
 import {
@@ -32,13 +33,20 @@ const PRIORITY_CLASS: Record<string, string> = {
 };
 
 export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskCardProps) {
-  const { isWorkspaceAdmin } = useWorkspace();
+  const { user } = useAuth();
+  const { isWorkspaceAdmin, isWorkspaceManager } = useWorkspace();
   const [loading, setLoading] = useState(false);
 
-  const assignee = members.find((m) => m.id === task.assignee_id);
+  const assignee  = members.find((m) => m.id === task.assignee_id);
+  const isLocked  = ["In Review", "Completed", "Discarded"].includes(task.status);
+  // Admins can always delete; Managers can delete their own unlocked tasks; Members cannot delete
+  const canDelete = isWorkspaceAdmin || (isWorkspaceManager && user?.id === task.assignee_id && !isLocked);
 
-  const isOverdue =
-    new Date(task.max_deadline) < new Date() && task.status !== "Completed";
+  const isDiscarded = task.status === "Discarded";
+  const isOverdue   =
+    new Date(task.max_deadline) < new Date() &&
+    task.status !== "Completed" &&
+    task.status !== "Discarded";
 
   const daysRemaining = Math.ceil(
     (new Date(task.max_deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
@@ -88,7 +96,7 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
     <div
       className={`glass-card-hover p-3.5 space-y-2.5 cursor-pointer ${
         isOverdue ? "border-red-300/60" : ""
-      }`}
+      } ${isDiscarded ? "opacity-60" : ""}`}
       onClick={() => onOpenPanel(task)}
     >
       {/* Header: title + delete */}
@@ -96,7 +104,7 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
         <span className="text-sm font-medium text-neutral-800 leading-snug flex-1">
           {task.title}
         </span>
-        {isWorkspaceAdmin && (
+        {canDelete && (
           <button
             onClick={(e) => {
               e.stopPropagation();

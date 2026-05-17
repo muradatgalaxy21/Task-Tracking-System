@@ -1,12 +1,14 @@
 // Client-safe RBAC utilities — no server imports, safe to use in client components.
 import type { UserRole } from "@/lib/types";
 
-// Role hierarchy: higher rank = more privileges
+// Role hierarchy: higher rank = more privileges.
+// Manager sits between Member and Admin — can create/name tasks but cannot approve them.
 export const ROLE_RANK: Record<UserRole, number> = {
-  Owner: 4,
-  Admin: 3,
-  Member: 2,
-  Guest: 1,
+  Owner:   5,
+  Admin:   4,
+  Manager: 3,
+  Member:  2,
+  Guest:   1,
 };
 
 // Returns true if the user's role meets or exceeds the required minimum
@@ -17,17 +19,20 @@ export function hasMinimumRole(userRole: string, minimumRole: UserRole): boolean
 }
 
 // Scoped permission helpers — use these in UI components and API routes
-export const canManageBilling = (role: string) => hasMinimumRole(role, "Owner");
-export const canManageMembers = (role: string) => hasMinimumRole(role, "Admin");
-export const canCreateTasks = (role: string) => hasMinimumRole(role, "Member");
-export const isReadOnly = (role: string) => role === "Guest";
+export const canManageBilling  = (role: string) => hasMinimumRole(role, "Owner");
+export const canManageMembers  = (role: string) => hasMinimumRole(role, "Admin");
+// Managers and above can create tasks and edit task titles
+export const canCreateTasks    = (role: string) => hasMinimumRole(role, "Manager");
+export const canEditTaskTitle  = (role: string) => hasMinimumRole(role, "Manager");
+// Members and above can edit metadata fields (description, notes, attachments)
+export const canEditMetadata   = (role: string) => hasMinimumRole(role, "Member");
+export const isReadOnly        = (role: string) => role === "Guest";
 
 // Returns whichever role has the higher rank.
-// Use this to compute the effective permission level when a user has both a
-// global role and a workspace-local role — the higher one wins.
+// Use this when a user has both a global role and a workspace-local role — the higher one wins.
 export function resolveEffectiveRole(globalRole: string, workspaceRole: string | null | undefined): string {
   if (!workspaceRole) return globalRole;
   const globalRank = ROLE_RANK[globalRole as UserRole] ?? 0;
-  const localRank = ROLE_RANK[workspaceRole as UserRole] ?? 0;
+  const localRank  = ROLE_RANK[workspaceRole as UserRole] ?? 0;
   return localRank > globalRank ? workspaceRole : globalRole;
 }

@@ -1,16 +1,10 @@
 "use client";
 
-// -------------------------------------------------------------------
-// Daily Attendance Sheet Page (Admin Only)
-// Admin selects a date and marks Present / Late / Absent for each
-// team member. Records are upserted into the daily_attendance table.
-// Restyled for warm light theme.
-// -------------------------------------------------------------------
-
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import type { Profile, DailyAttendance, AttendanceStatus } from "@/lib/types";
-import { Calendar, Save, ShieldAlert, Loader2, CheckCircle2 } from "lucide-react";
+import { Calendar, Save, Loader2, CheckCircle2 } from "lucide-react";
 
 // Status options for the radio button group
 const STATUS_OPTIONS: { value: AttendanceStatus; label: string; activeColor: string }[] =
@@ -22,6 +16,7 @@ const STATUS_OPTIONS: { value: AttendanceStatus; label: string; activeColor: str
 
 export default function AttendancePage() {
   const { isAdmin, loading: authLoading, refreshKey } = useAuth();
+  const { activeWorkspace, wsLoading } = useWorkspace();
   const [members, setMembers] = useState<Profile[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0]
@@ -31,17 +26,18 @@ export default function AttendancePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Fetch all member profiles
+  // Fetch members scoped to the active workspace only
   const fetchMembers = useCallback(async () => {
+    if (!activeWorkspace?.id) return;
     try {
-      const response = await fetch("/api/members");
+      const response = await fetch(`/api/members?workspaceId=${activeWorkspace.id}`);
       if (!response.ok) throw new Error("Failed to fetch members");
       const data = await response.json();
       setMembers(data);
     } catch (err) {
       console.error("Failed to fetch members:", err);
     }
-  }, []);
+  }, [activeWorkspace?.id]);
 
   // Fetch existing attendance records for the selected date
   const fetchAttendanceForDate = useCallback(async () => {
@@ -66,9 +62,10 @@ export default function AttendancePage() {
     }
   }, [selectedDate]);
 
+  // Re-fetch when active workspace or auth state changes
   useEffect(() => {
     fetchMembers();
-  }, [fetchMembers, refreshKey]);
+  }, [fetchMembers, refreshKey, activeWorkspace?.id]);
 
   useEffect(() => {
     if (selectedDate) fetchAttendanceForDate();
@@ -117,7 +114,7 @@ export default function AttendancePage() {
     }
   };
 
-  if (authLoading) {
+  if (authLoading || wsLoading) {
     return (
       <div className="space-y-6">
         <div className="skeleton h-10 w-64" />
@@ -126,7 +123,19 @@ export default function AttendancePage() {
     );
   }
 
-  // Permission check removed as per request to make attendance visible for everyone
+  // No workspace selected - nothing to show
+  if (!activeWorkspace) {
+    return (
+      <div className="space-y-6 animate-fade-in max-w-3xl">
+        <div>
+          <h1 className="text-2xl font-semibold text-neutral-800">Daily Attendance</h1>
+          <p className="text-sm text-neutral-400 mt-1">
+            Select a workspace from the sidebar to view attendance.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
 
   return (

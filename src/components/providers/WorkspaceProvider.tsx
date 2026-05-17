@@ -19,6 +19,8 @@ interface WorkspaceContextType {
   workspaceRole: string | null;
   // True if effective role (max of global and workspace-local) is Admin or above
   isWorkspaceAdmin: boolean;
+  // True if effective role is Manager or above (can create tasks, edit titles)
+  isWorkspaceManager: boolean;
   setActiveWorkspace: (ws: Workspace) => void;
   refreshWorkspaces: () => Promise<void>;
   wsLoading: boolean;
@@ -29,6 +31,7 @@ const WorkspaceContext = createContext<WorkspaceContextType>({
   activeWorkspace: null,
   workspaceRole: null,
   isWorkspaceAdmin: false,
+  isWorkspaceManager: false,
   setActiveWorkspace: () => {},
   refreshWorkspaces: async () => {},
   wsLoading: true,
@@ -77,10 +80,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Workspace-local role for the active workspace
   const workspaceRole = activeWorkspace?.member_role ?? null;
 
-  // Effective admin status: Admin if global role OR workspace role is Admin or above
-  const globalRole = user?.role ?? "Guest";
-  const effectiveRole = resolveEffectiveRole(globalRole, workspaceRole);
-  const isWorkspaceAdmin = hasMinimumRole(effectiveRole, "Admin");
+  const globalRole        = user?.role ?? "Guest";
+  const effectiveRole     = resolveEffectiveRole(globalRole, workspaceRole);
+  const isWorkspaceAdmin  = hasMinimumRole(effectiveRole, "Admin");
+  const isWorkspaceManager = hasMinimumRole(effectiveRole, "Manager");
 
   return (
     <WorkspaceContext.Provider
@@ -89,6 +92,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         activeWorkspace,
         workspaceRole,
         isWorkspaceAdmin,
+        isWorkspaceManager,
         setActiveWorkspace,
         refreshWorkspaces: fetchWorkspaces,
         wsLoading,

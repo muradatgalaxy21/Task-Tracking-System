@@ -29,6 +29,7 @@ interface AuthContextType {
   // Role flags use hierarchy: isAdmin is true for Admin AND Owner
   isOwner: boolean;
   isAdmin: boolean;
+  isManager: boolean;
   isMember: boolean;
   isGuest: boolean;
   loading: boolean;
@@ -42,6 +43,7 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   isOwner: false,
   isAdmin: false,
+  isManager: false,
   isMember: false,
   isGuest: false,
   loading: true,
@@ -114,13 +116,16 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
-  const activeRole = user?.role ?? "Guest";
+  // Prefer the DB-fresh role from profile (populated by syncProfile) over the
+  // stale JWT role so that admin-panel role changes are reflected immediately.
+  const activeRole = profile?.role ?? user?.role ?? "Guest";
 
-  // Each flag uses the role hierarchy so an Owner also satisfies isAdmin/isMember
-  const isOwner = hasMinimumRole(activeRole, "Owner");
-  const isAdmin = hasMinimumRole(activeRole, "Admin");
-  const isMember = hasMinimumRole(activeRole, "Member");
-  const isGuest = activeRole === "Guest";
+  // Each flag uses the role hierarchy so an Owner also satisfies isAdmin/isManager/isMember
+  const isOwner   = hasMinimumRole(activeRole, "Owner");
+  const isAdmin   = hasMinimumRole(activeRole, "Admin");
+  const isManager = hasMinimumRole(activeRole, "Manager");
+  const isMember  = hasMinimumRole(activeRole, "Member");
+  const isGuest   = activeRole === "Guest";
 
   return (
     <AuthContext.Provider
@@ -129,6 +134,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
         profile: profile || user,
         isOwner,
         isAdmin,
+        isManager,
         isMember,
         isGuest,
         loading,

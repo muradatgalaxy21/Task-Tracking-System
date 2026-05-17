@@ -3,10 +3,10 @@
 // Defines the shape of data models and their relationships.
 // -------------------------------------------------------------------
 
-// Four roles in ascending privilege order: Guest < Member < Admin < Owner
-export type UserRole = "Owner" | "Admin" | "Member" | "Guest";
+// Five roles in ascending privilege order: Guest < Member < Manager < Admin < Owner
+export type UserRole = "Owner" | "Admin" | "Manager" | "Member" | "Guest";
 
-export type TaskStatus = "Todo" | "In Progress" | "In Review" | "Completed";
+export type TaskStatus = "Todo" | "In Progress" | "In Review" | "Completed" | "Discarded";
 
 export type SubTaskStatus = "Todo" | "Completed";
 
@@ -158,6 +158,7 @@ export const STATUS_LABELS: Record<string, string> = {
   "In Progress": "In Progress",
   "In Review": "Review",
   "Completed": "Completed",
+  "Discarded": "Discarded",
 };
 
 // 7. Page: A content page within a workspace.

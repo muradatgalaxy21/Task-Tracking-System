@@ -51,3 +51,6 @@ venv/
 
 # AI configs
 .claude/
+
+#Reference UI images
+/reference-image/

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { Loader2, Check } from "lucide-react";
+import { getDisplayName } from "next/dist/shared/lib/utils";
 
 type ProfileData = {
   id: string;
@@ -135,7 +136,7 @@ export default function ProfileSettingsPanel() {
 
       {/* Appearance: dark mode toggle — preference is stored in localStorage,
           applies only to this user's browser session */}
-      <div className="border-t border-neutral-200 pt-4">
+      <div className="border-t border-neutral-200 pt-4" style={{ display: isElevated ? "none" : "block" }}> {/* to be changed */}
         <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider mb-3">
           Appearance
         </label>

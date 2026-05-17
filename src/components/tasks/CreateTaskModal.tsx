@@ -25,7 +25,6 @@ export default function CreateTaskModal({
   const [title, setTitle]               = useState("");
   const [description, setDescription]   = useState("");
   const [assigneeId, setAssigneeId]     = useState("");
-  const [estimatedDays, setEstimatedDays] = useState(1);
   const [priority, setPriority]         = useState<TaskPriority | "">("Medium");
   const [deadline, setDeadline]         = useState("");
   const [loading, setLoading]           = useState(false);
@@ -46,7 +45,6 @@ export default function CreateTaskModal({
     setTitle("");
     setDescription("");
     setAssigneeId("");
-    setEstimatedDays(1);
     setPriority("Medium");
     setDeadline("");
     setAiModelUsed("");
@@ -67,7 +65,6 @@ export default function CreateTaskModal({
 
     if (!title.trim()) { setError("Task title is required."); return; }
     if (!assigneeId)   { setError("Please select an assignee."); return; }
-    if (estimatedDays < 1) { setError("Estimated days must be at least 1."); return; }
     if (!deadline)     { setError("Please set a deadline."); return; }
 
     try {
@@ -81,7 +78,6 @@ export default function CreateTaskModal({
           description: description.trim(),
           assignee_id: assigneeId,
           workspace_id: workspaceId || null,
-          estimated_days: estimatedDays,
           max_deadline: new Date(deadline).toISOString(),
           priority: priority || null,
           ai_model_used: aiModelUsed.trim() || null,
@@ -229,35 +225,19 @@ export default function CreateTaskModal({
             </div>
           </div>
 
-          {/* Estimated Days + Deadline */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-neutral-500 font-medium mb-1.5 uppercase tracking-wider">
-                Estimated Days
-              </label>
-              <input
-                type="number"
-                value={estimatedDays}
-                onChange={(e) =>
-                  setEstimatedDays(Math.max(1, parseInt(e.target.value) || 1))
-                }
-                min={1}
-                className="glass-input"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-neutral-500 font-medium mb-1.5 uppercase tracking-wider">
-                Deadline
-              </label>
-              <input
-                type="date"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-                className="glass-input"
-                required
-              />
-            </div>
+          {/* Deadline */}
+          <div>
+            <label className="block text-xs text-neutral-500 font-medium mb-1.5 uppercase tracking-wider">
+              Deadline
+            </label>
+            {/* datetime-local accepts YYYY-MM-DDTHH:MM and is interpreted as local time */}
+            <input
+              type="datetime-local"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              className="glass-input"
+              required
+            />
           </div>
 
           {/* Technical metadata (collapsible) */}

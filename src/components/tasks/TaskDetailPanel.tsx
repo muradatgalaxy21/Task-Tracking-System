@@ -237,6 +237,119 @@ function InlineNumberField({ value, canEdit, onSave, saving }: InlineNumberField
   );
 }
 
+// ---- Inline title editor (Manager+) ---- //
+
+function TitleEditor({
+  value,
+  onSave,
+  saving,
+}: {
+  value: string;
+  onSave: (v: string) => Promise<void>;
+  saving: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={async (e) => {
+            if (e.key === "Enter" && draft.trim()) {
+              await onSave(draft.trim());
+              setEditing(false);
+            }
+            if (e.key === "Escape") {
+              setDraft(value);
+              setEditing(false);
+            }
+          }}
+          className="glass-input text-sm font-semibold py-1 flex-1 min-w-0"
+          disabled={saving}
+          autoFocus
+        />
+        <button
+          onClick={async () => {
+            if (draft.trim()) {
+              await onSave(draft.trim());
+              setEditing(false);
+            }
+          }}
+          disabled={saving || !draft.trim()}
+          className="btn-primary text-xs py-1 px-2 shrink-0"
+        >
+          Save
+        </button>
+        <button
+          onClick={() => { setDraft(value); setEditing(false); }}
+          className="btn-ghost text-xs py-1 px-2 shrink-0"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      className="text-base font-semibold text-neutral-800 leading-snug pr-2 text-left hover:text-warm-400 transition-colors group flex items-start gap-1"
+      title="Click to edit title"
+    >
+      {value}
+      <Edit3 size={11} className="shrink-0 mt-1 opacity-0 group-hover:opacity-60 transition-opacity" />
+    </button>
+  );
+}
+
+// ---- Delete button for panel header ---- //
+
+function DeleteButton({
+  taskId,
+  onDeleted,
+  onUpdate,
+}: {
+  taskId: string;
+  onDeleted: () => void;
+  onUpdate: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleDelete = async () => {
+    if (!confirm("Delete this task? This cannot be undone.")) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/tasks?id=${taskId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).error || "Delete failed");
+      onUpdate();
+      onDeleted();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete task");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleDelete}
+      disabled={loading}
+      title="Delete task"
+      className="p-1.5 rounded text-neutral-300 hover:text-red-500 hover:bg-red-50 transition-all"
+    >
+      <Trash2 size={15} />
+    </button>
+  );
+}
+
 // ---- Priority class map ---- //
 const PRIORITY_CLASS: Record<string, string> = {
   Urgent: "priority-urgent",
@@ -256,17 +369,28 @@ interface TaskDetailPanelProps {
 
 export default function TaskDetailPanel({ task, members, onClose, onUpdate }: TaskDetailPanelProps) {
   const { user } = useAuth();
-  // isWorkspaceAdmin accounts for both global role and workspace-local role
-  const { isWorkspaceAdmin } = useWorkspace();
+  const { isWorkspaceAdmin, isWorkspaceManager } = useWorkspace();
   const [saving, setSaving] = useState(false);
   const [showAttachmentForm, setShowAttachmentForm] = useState(false);
   const [attachName, setAttachName] = useState("");
   const [attachUrl, setAttachUrl] = useState("");
 
-  const isOwnTask = user?.id === task.assignee_id;
-  // Members cannot modify anything once a task reaches In Review status
+  const isOwnTask  = user?.id === task.assignee_id;
+  // Review lock: once In Review only Admins can modify anything
   const isReviewLocked = task.status === "In Review" && !isWorkspaceAdmin;
-  const canEdit = !isReviewLocked && (isWorkspaceAdmin || isOwnTask);
+
+  // Title editing requires Manager or above
+  const canEditTitle    = !isReviewLocked && isWorkspaceManager;
+  // Metadata (description, notes, attachments) can be edited by the assignee if Member+, or Admin
+  const canEditMetadata = !isReviewLocked && (isWorkspaceAdmin || isOwnTask);
+
+  // Admins can always delete; Managers can delete their own unlocked tasks.
+  // Members cannot delete tasks at all.
+  const isLocked    = ["In Review", "Completed", "Discarded"].includes(task.status);
+  const isDeletable = isWorkspaceAdmin || (isWorkspaceManager && isOwnTask && !isLocked);
+
+  // Legacy canEdit alias used by existing sub-components (metadata scope)
+  const canEdit = canEditMetadata;
 
   const assignee = members.find((m) => m.id === task.assignee_id);
   const initials = assignee?.full_name
@@ -346,11 +470,14 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
   };
 
   const getAllowedTransitions = (): TaskStatus[] => {
-    if (isWorkspaceAdmin) return ["Todo", "In Progress", "In Review", "Completed"];
+    // Admins can move to any status including terminal ones
+    if (isWorkspaceAdmin) return ["Todo", "In Progress", "In Review", "Completed", "Discarded"];
+    // Non-owners/admins cannot advance from terminal states
     if (!isOwnTask) return [];
     switch (task.status) {
       case "Todo":        return ["In Progress"];
       case "In Progress": return ["In Review"];
+      // Members/Managers cannot self-transition from review or terminal states
       default:            return [];
     }
   };
@@ -374,6 +501,7 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
     "In Progress": "bg-blue-50 text-blue-700 border-blue-200",
     "In Review":   "bg-amber-50 text-amber-700 border-amber-200",
     "Completed":   "bg-green-50 text-green-700 border-green-200",
+    "Discarded":   "bg-neutral-100 text-neutral-400 border-neutral-200",
   }[task.status] ?? "bg-neutral-100 text-neutral-500 border-neutral-200";
 
   return (
@@ -431,17 +559,32 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
               )}
             </div>
 
-            <h2 className="text-base font-semibold text-neutral-800 leading-snug pr-2">
-              {task.title}
-            </h2>
+            {/* Title — editable for Managers and above */}
+            {canEditTitle ? (
+              <TitleEditor
+                value={task.title}
+                onSave={(v) => saveField("title", v)}
+                saving={saving}
+              />
+            ) : (
+              <h2 className="text-base font-semibold text-neutral-800 leading-snug pr-2">
+                {task.title}
+              </h2>
+            )}
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-all shrink-0 mt-0.5"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1 shrink-0 mt-0.5">
+            {/* Delete button — available to assignees (when not locked) and admins */}
+            {isDeletable && (
+              <DeleteButton taskId={task.task_id} onDeleted={onClose} onUpdate={onUpdate} />
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-all"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Review lock banner — shown to Members when task is In Review */}
@@ -497,10 +640,13 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
                   }`}
                 >
                   {isOverdue ? <AlertTriangle size={11} /> : <Clock size={11} />}
-                  {new Date(task.max_deadline).toLocaleDateString("en-US", {
+                  {/* Show date and time if a non-midnight time was set */}
+                  {new Date(task.max_deadline).toLocaleString("en-US", {
                     month: "short",
                     day: "numeric",
                     year: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
                   })}
                   <span className="text-neutral-400">
                     {isOverdue

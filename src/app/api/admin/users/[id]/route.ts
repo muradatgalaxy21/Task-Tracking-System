@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/rbac";
 
-const VALID_ROLES = ["Owner", "Admin", "Member", "Guest"] as const;
+const VALID_ROLES = ["Owner", "Admin", "Manager", "Member", "Guest"] as const;
 type ValidRole = (typeof VALID_ROLES)[number];
 
 // PATCH /api/admin/users/[id] - Update a user's global role (Owner only)
