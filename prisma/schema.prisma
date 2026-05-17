@@ -6,8 +6,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "sqlite"
+  url       = env("DATABASE_URL")
+  // directUrl is used for direct connections, bypassing any connection pooler (e.g. Turso HTTP pooling)
+  directUrl = env("DIRECT_URL")
 }
 
 // NextAuth standard models
