@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { hasMinimumRole } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -51,14 +52,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Only Admin can record or update attendance
+  // Admin and Owner can record or update attendance
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { role: true }
+    select: { role: true },
   });
 
-  if (user?.role !== "Admin") {
-    return NextResponse.json({ error: "Only Admins can log attendance" }, { status: 403 });
+  if (!user || !hasMinimumRole(user.role, "Admin")) {
+    return NextResponse.json(
+      { error: "Only Admins and Owners can log attendance" },
+      { status: 403 }
+    );
   }
 
   try {
