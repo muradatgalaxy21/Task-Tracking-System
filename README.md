@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI & Beyond Evaluator
+
+## Project Overview
+
+**Application Name:** AI & Beyond Evaluator
+**Purpose:** Internal team performance evaluation and task tracking system built for the AI & Beyond agency. It tracks tasks, attendance, calculates performance scores, and distributes payouts based on individual contributions.
+
+**Core Business Logic:**
+- Assign tasks to team members with deadlines
+- Track task completion against deadlines using a multiplier penalty system
+- Record daily attendance (Present / Late / Absent)
+- Calculate composite scores: Task Performance Score (80%) + Attendance Score (20%)
+- Distribute monthly payouts proportionally based on scores
 
 ## Getting Started
 
-First, run the development server:
+First, install the dependencies:
+
+```bash
+npm install
+```
+
+Then, run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tech Stack & Architecture
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Frontend:** Next.js + React 19
+- **Styling:** Tailwind CSS 4
+- **Auth:** NextAuth.js (v4)
+- **Database:** SQLite via Prisma ORM
+- **Email:** Nodemailer (SMTP)
 
-## Learn More
+## Documentation
 
-To learn more about Next.js, take a look at the following resources:
+For a comprehensive breakdown of every feature, its working mechanism, structural flow, access control, and implementation details, please refer to the [info.md](./info.md) file included in this repository.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment Variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Make sure to configure your environment variables based on `.env.example`.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `DATABASE_URL` (Required)
+- `NEXTAUTH_SECRET` (Required)
+- `NEXTAUTH_URL` (Required)
+- Other optional keys for OAuth, SMTP, etc.
