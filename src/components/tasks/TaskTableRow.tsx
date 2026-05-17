@@ -54,6 +54,7 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
       case "In Progress": return "#337ea9";
       case "In Review":   return "#cb912f";
       case "Completed":   return "#448361";
+      case "Discarded":   return "#b0a9a2";
       default:            return "#91918e";
     }
   };

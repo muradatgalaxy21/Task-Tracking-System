@@ -25,7 +25,8 @@ import {
 } from "lucide-react";
 
 type ViewMode = "list" | "kanban";
-type TabType = "All" | TaskStatus;
+// Explicit union so the compiler enforces every tab ID at the call site
+type TabType = "All" | "Todo" | "In Progress" | "In Review" | "Completed" | "Discarded";
 
 const TABS: { id: TabType; label: string; color: string }[] = [
   { id: "All",         label: "All",        color: "#37352f"  },
