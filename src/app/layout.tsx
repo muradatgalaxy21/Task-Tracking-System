@@ -12,6 +12,10 @@ export const metadata: Metadata = {
   title: "AI & Beyond Evaluator",
   description:
     "Team performance evaluation and task tracking system for AI & Beyond.",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+  },
 };
 
 import Providers from "@/components/Providers";
