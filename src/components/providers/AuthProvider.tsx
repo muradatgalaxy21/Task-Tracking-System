@@ -1,10 +1,21 @@
 "use client";
 
-import { createContext, useContext, ReactNode, useState, useCallback, useEffect } from "react";
-import { useSession, signOut as nextAuthSignOut, SessionProvider } from "next-auth/react";
+import {
+  createContext,
+  useContext,
+  ReactNode,
+  useState,
+  useCallback,
+  useEffect,
+} from "react";
+import {
+  useSession,
+  signOut as nextAuthSignOut,
+  SessionProvider,
+} from "next-auth/react";
 import { useRouter, usePathname } from "next/navigation";
+import { hasMinimumRole } from "@/lib/rbac-utils";
 
-// Define a type that mimics the previous Supabase user to minimize refactoring
 export interface NextAuthUser {
   id: string;
   email?: string | null;
@@ -14,8 +25,12 @@ export interface NextAuthUser {
 
 interface AuthContextType {
   user: NextAuthUser | null;
-  profile: NextAuthUser | null; // Merged for NextAuth
+  profile: NextAuthUser | null;
+  // Role flags use hierarchy: isAdmin is true for Admin AND Owner
+  isOwner: boolean;
   isAdmin: boolean;
+  isMember: boolean;
+  isGuest: boolean;
   loading: boolean;
   refreshKey: number;
   signOut: () => Promise<void>;
@@ -25,7 +40,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
+  isOwner: false,
   isAdmin: false,
+  isMember: false,
+  isGuest: false,
   loading: true,
   refreshKey: 0,
   signOut: async () => {},
@@ -41,12 +59,12 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [profile, setProfile] = useState<NextAuthUser | null>(null);
 
   const loading = status === "loading";
   const user = session?.user as NextAuthUser | null;
-  const [profile, setProfile] = useState<NextAuthUser | null>(null);
 
-  // Sync profile with DB to ensure names are always fresh
+  // Sync profile with DB so names and roles are always fresh
   useEffect(() => {
     if (user?.id) {
       const syncProfile = async () => {
@@ -54,16 +72,16 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
           const res = await fetch(`/api/members?id=${user.id}`);
           if (res.ok) {
             const data = await res.json();
-            const updatedProfile = {
+            const updated: NextAuthUser = {
               id: user.id,
               email: user.email,
               full_name: data.full_name,
               role: data.role || "Member",
             };
-            setProfile(updatedProfile);
+            setProfile(updated);
 
-            // Force onboarding if full_name is missing
-            if (!updatedProfile.full_name && pathname !== "/onboarding") {
+            // Redirect to onboarding if the user has not set their name yet
+            if (!updated.full_name && pathname !== "/onboarding") {
               router.push("/onboarding");
             }
           }
@@ -82,27 +100,42 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshProfile = useCallback(async () => {
-    setRefreshKey(prev => prev + 1);
+    setRefreshKey((prev) => prev + 1);
   }, []);
 
-  // Handle Tab Wake-Up (Global Session Recovery)
+  // Re-sync when the tab regains focus (handles session expiry edge cases)
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleVisibility = () => {
       if (document.visibilityState === "visible") {
         setRefreshKey((prev) => prev + 1);
       }
     };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
-  const isAdmin = user?.role === "Admin";
+  const activeRole = user?.role ?? "Guest";
+
+  // Each flag uses the role hierarchy so an Owner also satisfies isAdmin/isMember
+  const isOwner = hasMinimumRole(activeRole, "Owner");
+  const isAdmin = hasMinimumRole(activeRole, "Admin");
+  const isMember = hasMinimumRole(activeRole, "Member");
+  const isGuest = activeRole === "Guest";
 
   return (
     <AuthContext.Provider
-      value={{ user, profile: profile || user, isAdmin, loading, refreshKey, signOut, refreshProfile }}
+      value={{
+        user,
+        profile: profile || user,
+        isOwner,
+        isAdmin,
+        isMember,
+        isGuest,
+        loading,
+        refreshKey,
+        signOut,
+        refreshProfile,
+      }}
     >
       {children}
     </AuthContext.Provider>
