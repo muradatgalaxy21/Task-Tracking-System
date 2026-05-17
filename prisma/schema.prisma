@@ -57,19 +57,24 @@ model User {
   image         String?
   accounts      Account[]
   sessions      Session[]
-  
+
   role          String    @default("Member")
-  
-  workspaces    Workspace[]       @relation("CreatedWorkspaces")
-  memberships   WorkspaceMember[]
-  tasks         TaskLedger[]
-  attendance    DailyAttendance[]
+
+  workspaces           Workspace[]       @relation("CreatedWorkspaces")
+  memberships          WorkspaceMember[]
+  tasks                TaskLedger[]
+  attendance           DailyAttendance[]
+  notifications        Notification[]
+  invitations_created  Invitation[]      @relation("InvitationsCreated")
 }
 
 model Workspace {
   id          String   @id @default(uuid())
   name        String
   description String   @default("")
+  // Nullable so existing workspaces remain valid after migration.
+  // New workspaces always receive a code on creation.
+  invite_code String?  @unique
   created_by  String?
   created_at  DateTime @default(now())
 
@@ -77,6 +82,7 @@ model Workspace {
   members     WorkspaceMember[]
   pages       Page[]
   tasks       TaskLedger[]
+  invitations Invitation[]
 }
 
 model WorkspaceMember {
@@ -115,9 +121,35 @@ model TaskLedger {
   completed_at      DateTime?
   multiplier_earned Float?
 
-  workspace       Workspace? @relation(fields: [workspace_id], references: [id], onDelete: SetNull)
-  assignee        User       @relation(fields: [assignee_id], references: [id], onDelete: Cascade)
+  ai_model_used   String?
+  benchmark_score String?
+  repo_link       String?
+
+  // Deep Dive panel fields
+  technical_requirements String @default("")
+  architecture_notes     String @default("")
+  estimated_hours        Float?
+  actual_hours           Float?
+  attachments            String @default("[]")
+
+  workspace       Workspace?     @relation(fields: [workspace_id], references: [id], onDelete: SetNull)
+  assignee        User           @relation(fields: [assignee_id], references: [id], onDelete: Cascade)
   sub_tasks       SubTask[]
+  activities      TaskActivity[]
+}
+
+model TaskActivity {
+  id         String   @id @default(uuid())
+  task_id    String
+  user_id    String?
+  actor_name String?
+  // "comment" | "status_change" | "field_update" | "attachment"
+  type       String
+  content    String
+  metadata   String?
+  created_at DateTime @default(now())
+
+  task       TaskLedger @relation(fields: [task_id], references: [task_id], onDelete: Cascade)
 }
 
 model SubTask {
@@ -141,4 +173,65 @@ model DailyAttendance {
   user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@unique([user_id, date])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  user_id    String
+  task_id    String?
+  task_title String?
+  from_name  String
+  type       String   @default("mention")
+  message    String
+  read       Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  user       User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// Stores short-lived tokens used for the password reset flow.
+// Each token is deleted immediately after use or when a new one is issued for the same email.
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  email      String
+  token      String   @unique
+  expires_at DateTime
+  created_at DateTime @default(now())
+}
+
+// Single-use workspace invitation codes.
+// Admin/Owner-generated invites are ACTIVE (instant join).
+// Member-generated invites start PENDING_APPROVAL; a claimer is recorded when
+// someone tries to use the code and an admin must approve before they join.
+model Invitation {
+  id                 String    @id @default(cuid())
+  code               String    @unique
+  email              String?
+  workspace_id       String
+  invited_by_id      String
+  // True when created by a workspace Admin or Owner
+  is_admin_generated Boolean   @default(false)
+  // PENDING_APPROVAL | ACTIVE | USED | EXPIRED
+  status             String    @default("PENDING_APPROVAL")
+  created_at         DateTime  @default(now())
+  expires_at         DateTime?
+  // Set when a user attempts to use a PENDING_APPROVAL code
+  claimer_id         String?
+  claimer_email      String?
+  claimed_at         DateTime?
+
+  workspace          Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  invited_by         User      @relation("InvitationsCreated", fields: [invited_by_id], references: [id], onDelete: Cascade)
+}
+
+// Holds a pending profile update for Admin/Owner users that requires
+// email link confirmation before the database is mutated.
+model ProfileVerificationToken {
+  id         String   @id @default(cuid())
+  user_id    String
+  token      String   @unique
+  // JSON-encoded profile fields to apply once the link is clicked
+  payload    String
+  expires_at DateTime
+  created_at DateTime @default(now())
 }
