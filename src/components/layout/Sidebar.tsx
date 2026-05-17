@@ -185,8 +185,8 @@ export default function Sidebar() {
   };
 
   const navItems: NavItem[] = [
-    { label: "Dashboard", href: "/dashboard",            icon: <LayoutDashboard size={17} /> },
-    { label: "Tasks",     href: "/dashboard",            icon: <CheckSquare size={17} /> },
+    { label: "Dashboard", href: "/dashboard",       icon: <LayoutDashboard size={17} /> },
+    { label: "Tasks",     href: "/dashboard/tasks", icon: <CheckSquare size={17} /> },
     { label: "Projects",  href: "/dashboard/ledger",     icon: <FolderOpen size={17} /> },
     { label: "Team",      href: "/dashboard/attendance", icon: <Users size={17} /> },
     { label: "Reports",   href: "/dashboard/payout",     icon: <BarChart2 size={17} />, adminOnly: true },
@@ -196,10 +196,9 @@ export default function Sidebar() {
   return (
     <>
       <aside
-        className={`fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-200 ${
+        className={`sidebar-base fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-200 ${
           collapsed ? "w-[56px]" : "w-[260px]"
         }`}
-        style={{ background: "#fbfbfa", borderRight: "1px solid rgba(55, 53, 47, 0.09)" }}
       >
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-4 py-4 border-b border-neutral-200/60">

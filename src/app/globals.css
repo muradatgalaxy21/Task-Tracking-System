@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Enable class-based dark mode: dark: utilities apply when an ancestor has class="dark" */
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* ------------------------------------------------------------------ */
 /* AI & Beyond Evaluator: Notion-Inspired Warm Light Theme             */
@@ -125,6 +127,10 @@ body {
 .status-completed {
   background: rgba(68, 131, 97, 0.12);
   color: #448361;
+}
+.status-discarded {
+  background: rgba(145, 145, 142, 0.08);
+  color: #a8a29e;
 }
 
 /* ------------------------------------------------------------------ */
@@ -424,3 +430,205 @@ body {
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ------------------------------------------------------------------ */
+/* Dark Mode — "dark" class on a React-managed wrapper div drives all  */
+/* theme switches. CSS selectors target .dark descendants directly.    */
+/* ------------------------------------------------------------------ */
+
+/* Sidebar base class — replaces the inline style so dark overrides work */
+.sidebar-base {
+  background: var(--color-sidebar-bg);
+  border-right: 1px solid rgba(55, 53, 47, 0.09);
+}
+
+/* Remap Tailwind design tokens for dark mode.
+   Using ".dark, .dark *" (outside @layer) ensures this beats Tailwind v4's
+   @layer theme reset that sets every variable to "initial" on *, which
+   would otherwise block inheritance from a parent selector alone. */
+.dark,
+.dark * {
+  --color-neutral-50:  #0c0c0f;
+  --color-neutral-100: #111115;
+  --color-neutral-200: #1e1e26;
+  --color-neutral-300: #282832;
+  --color-neutral-400: #85859a;
+  --color-neutral-500: #a8a8ba;
+  --color-neutral-600: #c0c0d0;
+  --color-neutral-700: #d4d4e2;
+  --color-neutral-800: #e8e8f2;
+  --color-neutral-900: #f4f4f8;
+
+  /* Warm scale: backgrounds flip to very dark warm tints */
+  --color-warm-50:  #14100a;
+  --color-warm-100: #1a1508;
+  --color-warm-200: #22190a;
+  /* warm-400 and warm-500 are brand colors — intentionally unchanged */
+
+  /* Sidebar tokens */
+  --color-sidebar-bg:     #111115;
+  --color-sidebar-hover:  #1c1c24;
+  --color-sidebar-active: #22222c;
+}
+
+/* html-level dark class: keeps body bg correct when dark is also on <html>
+   (set by ThemeProvider as a belt-and-suspenders alongside the wrapper div) */
+html.dark body {
+  background-color: #0c0c0f;
+  color: #e8e8f2;
+}
+
+/* Main content area background */
+.dark .bg-gradient-radial {
+  background: #0c0c0f;
+}
+
+/* Sidebar */
+.dark .sidebar-base {
+  border-right-color: rgba(255, 255, 255, 0.06);
+}
+
+/* bg-white used broadly on cards, modals, dropdowns, panels */
+.dark .bg-white {
+  background-color: #17171c;
+}
+
+/* Cards */
+.dark .glass-card {
+  background: #17171c;
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.dark .glass-card-hover {
+  background: #17171c;
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.dark .glass-card-hover:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Inputs */
+.dark .glass-input {
+  background: #1c1c24;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #e8e8f2;
+}
+.dark .glass-input:focus {
+  border-color: #e06b6b;
+  box-shadow: 0 0 0 3px rgba(224, 107, 107, 0.18);
+}
+.dark .glass-input::placeholder {
+  color: rgba(232, 232, 242, 0.28);
+}
+
+/* Selects */
+.dark .glass-select {
+  background: #1c1c24;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #e8e8f2;
+}
+.dark .glass-select option {
+  background: #1c1c24;
+  color: #e8e8f2;
+}
+
+/* Sidebar nav items */
+.dark .sidebar-item {
+  color: rgba(232, 232, 242, 0.5);
+}
+.dark .sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e8e8f2;
+}
+.dark .sidebar-item.active {
+  background: rgba(224, 107, 107, 0.12);
+  color: #e06b6b;
+}
+
+/* Buttons */
+.dark .btn-ghost {
+  color: #e8e8f2;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.dark .btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* Status badges */
+.dark .status-todo       { background: rgba(130, 130, 130, 0.2); color: #aaa8a4; }
+.dark .status-in-progress{ background: rgba(51, 126, 169, 0.22); color: #5ab4e0; }
+.dark .status-in-review  { background: rgba(203, 145, 47, 0.22); color: #d4a850; }
+.dark .status-completed  { background: rgba(68, 131, 97, 0.22);  color: #5caf7a; }
+.dark .status-discarded  { background: rgba(100, 100, 100, 0.12);color: #606070; }
+
+/* Priority badges */
+.dark .priority-urgent { background: rgba(185, 28, 28, 0.2);  color: #f87171; }
+.dark .priority-high   { background: rgba(224, 107, 107, 0.2);color: #e06b6b; }
+.dark .priority-medium { background: rgba(203, 145, 47, 0.2); color: #d4a850; }
+.dark .priority-low    { background: rgba(51, 126, 169, 0.2); color: #5ab4e0; }
+
+/* Data table */
+.dark .notion-table th {
+  background: #0c0c0f;
+  color: rgba(232, 232, 242, 0.38);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+.dark .notion-table td {
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+}
+.dark .notion-table tr:hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+/* Kanban columns */
+.dark .kanban-column {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Skeleton shimmer */
+.dark .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* Scrollbar */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Stat card icon backgrounds */
+.dark .bg-purple-50 { background-color: rgba(139, 92, 246, 0.1); }
+.dark .bg-green-50  { background-color: rgba(68, 131, 97, 0.1);  }
+.dark .bg-blue-50   { background-color: rgba(51, 126, 169, 0.1); }
+.dark .bg-amber-50  { background-color: rgba(203, 145, 47, 0.1); }
+.dark .bg-red-50    { background-color: rgba(185, 28, 28, 0.1);  }
+
+/* Stat card icon colors */
+.dark .text-purple-500 { color: #a78bfa; }
+.dark .text-green-500  { color: #5caf7a; }
+.dark .text-blue-500   { color: #5ab4e0; }
+.dark .text-amber-500  { color: #d4a850; }
+
+/* Alert / banner semantic colors */
+.dark .border-green-200 { border-color: rgba(68, 131, 97, 0.3);   }
+.dark .border-blue-200  { border-color: rgba(51, 126, 169, 0.3);  }
+.dark .border-red-200   { border-color: rgba(185, 28, 28, 0.3);   }
+.dark .border-amber-200 { border-color: rgba(203, 145, 47, 0.3);  }
+.dark .text-green-700   { color: #5caf7a; }
+.dark .text-blue-700    { color: #5ab4e0; }
+.dark .text-red-700     { color: #f87171; }
+.dark .text-amber-700   { color: #d4a850; }
+.dark .text-red-500     { color: #f87171; }
+.dark .text-red-600     { color: #f87171; }

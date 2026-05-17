@@ -15,11 +15,16 @@ interface TaskTableRowProps {
   members: Profile[];
   onUpdate: () => void;
   onOpenPanel: (task: TaskLedger) => void;
+  isSelected?: boolean;
 }
 
-export default function TaskTableRow({ task, members, onUpdate, onOpenPanel }: TaskTableRowProps) {
+export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isSelected = false }: TaskTableRowProps) {
   const { isWorkspaceAdmin } = useWorkspace();
   const [loading, setLoading] = useState(false);
+
+  // Inline auth for delete: admins always, assignees only when task is not locked
+  const isLocked  = ["In Review", "Completed", "Discarded"].includes(task.status);
+  const canDelete = isWorkspaceAdmin;
 
   const assignee = members.find((m) => m.id === task.assignee_id);
 
@@ -81,11 +86,21 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel }: T
     ? assignee.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : "?";
 
+  // Selected state reuses the same deep-dark treatment as hover so the open
+  // panel always has a clear visual anchor on the row that triggered it.
+  const selectedClasses = isSelected
+    ? "dark:bg-[#050508] dark:outline dark:outline-1 dark:outline-zinc-700"
+    : "";
+
   return (
     <tr
-      className={`group transition-colors cursor-pointer hover:bg-neutral-50/80 ${
-        isOverdue ? "bg-red-50/30" : ""
-      }`}
+      className={`group cursor-pointer transition-all duration-150
+        hover:bg-neutral-50
+        dark:bg-white/[0.015]
+        dark:hover:bg-[#050508] dark:hover:outline dark:hover:outline-1 dark:hover:outline-zinc-700
+        ${selectedClasses}
+        ${isOverdue ? "bg-red-50/30 dark:bg-red-950/20" : ""}
+      `}
       onClick={() => onOpenPanel(task)}
     >
       {/* Title */}
@@ -195,9 +210,9 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel }: T
         )}
       </td>
 
-      {/* Delete action */}
+      {/* Delete action — shown to admins always, the panel handles fine-grained assignee deletes */}
       <td className="px-3 py-2.5 text-right">
-        {isWorkspaceAdmin && (
+        {canDelete && (
           <button
             onClick={(e) => {
               e.stopPropagation();

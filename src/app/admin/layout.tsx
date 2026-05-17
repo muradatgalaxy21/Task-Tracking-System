@@ -31,7 +31,7 @@ export default async function AdminLayout({
 
   return (
     <div
-      className="min-h-screen bg-[#f7f7f8]"
+      className="min-h-screen bg-[#0c0c0f]"
       style={{ fontFamily: "Inter, system-ui, sans-serif" }}
     >
       {/* Admin top bar */}

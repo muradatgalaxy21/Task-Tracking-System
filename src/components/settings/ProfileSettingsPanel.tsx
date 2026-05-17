@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useTheme } from "@/components/providers/ThemeProvider";
 import { Loader2, Check } from "lucide-react";
 
 type ProfileData = {
@@ -13,6 +14,7 @@ type ProfileData = {
 
 export default function ProfileSettingsPanel() {
   const { user, refreshProfile } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [fullName, setFullName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -128,6 +130,37 @@ export default function ProfileSettingsPanel() {
         </label>
         <div className="inline-block text-xs font-semibold px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600">
           {profile.role}
+        </div>
+      </div>
+
+      {/* Appearance: dark mode toggle — preference is stored in localStorage,
+          applies only to this user's browser session */}
+      <div className="border-t border-neutral-200 pt-4">
+        <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider mb-3">
+          Appearance
+        </label>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-neutral-700">Dark Mode</p>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Applies only to your personal session.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={theme === "dark"}
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#e06b6b] focus-visible:ring-offset-2 ${
+              theme === "dark" ? "bg-[#e06b6b]" : "bg-neutral-200"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${
+                theme === "dark" ? "translate-x-6" : "translate-x-1"
+              }`}
+            />
+          </button>
         </div>
       </div>
 

@@ -33,11 +33,12 @@ const TABS: { id: TabType; label: string; color: string }[] = [
   { id: "In Progress", label: "In Progress", color: "#337ea9"  },
   { id: "In Review",   label: "Review",      color: "#cb912f"  },
   { id: "Completed",   label: "Completed",   color: "#448361"  },
+  { id: "Discarded",   label: "Discarded",   color: "#b0a9a2"  },
 ];
 
 export default function TaskListView() {
   const { user, profile, refreshKey, isAdmin, isMember } = useAuth();
-  const { activeWorkspace, isWorkspaceAdmin } = useWorkspace();
+  const { activeWorkspace, isWorkspaceAdmin, isWorkspaceManager } = useWorkspace();
   const [tasks, setTasks]       = useState<TaskLedger[]>([]);
   const [members, setMembers]   = useState<Profile[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -132,7 +133,8 @@ export default function TaskListView() {
     setDueToday(false);
   };
 
-  const canCreate = isAdmin || isMember || isWorkspaceAdmin;
+  // Task creation requires Manager or above (workspace role or global role)
+  const canCreate = isWorkspaceManager || isWorkspaceAdmin;
 
   return (
     <div className="space-y-4">
@@ -147,14 +149,15 @@ export default function TaskListView() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Kanban / List toggle */}
-          <div className="flex items-center border border-neutral-200 rounded-lg overflow-hidden">
+          {/* Kanban / List toggle — pill container with a micro-pill active indicator */}
+          <div className="inline-flex items-center gap-0.5 bg-neutral-100 border border-neutral-200 rounded-lg p-1">
             <button
               onClick={() => setViewMode("list")}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+              /* active: raised micro-pill (bg-white + shadow); inactive: muted text, brightens on hover */
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                 viewMode === "list"
-                  ? "bg-neutral-800 text-white"
-                  : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
+                  ? "bg-white shadow-sm text-neutral-900"
+                  : "text-neutral-500 hover:text-neutral-700"
               }`}
               title="List view"
             >
@@ -163,10 +166,10 @@ export default function TaskListView() {
             </button>
             <button
               onClick={() => setViewMode("kanban")}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                 viewMode === "kanban"
-                  ? "bg-neutral-800 text-white"
-                  : "text-neutral-500 hover:text-neutral-700 hover:bg-neutral-50"
+                  ? "bg-white shadow-sm text-neutral-900"
+                  : "text-neutral-500 hover:text-neutral-700"
               }`}
               title="Kanban view"
             >
@@ -369,6 +372,7 @@ export default function TaskListView() {
                       members={members}
                       onUpdate={fetchData}
                       onOpenPanel={(t) => setSelectedTaskId(t.task_id)}
+                      isSelected={task.task_id === selectedTaskId}
                     />
                   ))}
                 </tbody>
