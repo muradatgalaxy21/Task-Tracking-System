@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
@@ -9,7 +9,7 @@ import WorkspaceSettingsPanel from "@/components/settings/WorkspaceSettingsPanel
 
 type Tab = "profile" | "workspace";
 
-export default function SettingsPage() {
+function SettingsContent() {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const searchParams = useSearchParams();
@@ -78,5 +78,13 @@ export default function SettingsPage() {
       {activeTab === "profile" && <ProfileSettingsPanel />}
       {activeTab === "workspace" && <WorkspaceSettingsPanel />}
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense>
+      <SettingsContent />
+    </Suspense>
   );
 }
