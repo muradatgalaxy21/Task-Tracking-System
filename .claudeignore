@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.*
+
+# Next.js build output
+.next/
+out/
+build/
+
+# Package manager lock files (extremely large and irrelevant for code reasoning)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
+# Local database files
+*.db
+*.db-journal
+
+# Environment variables (secrets)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Media and visual assets (cannot be parsed as text)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.svg
+*.ico
+*.webp
+*.mp4
+*.webm
+
+# Vercel and other deployment folders
+.vercel/
+
+# Testing and coverage
+coverage/
+
+# Typescript build info
+*.tsbuildinfo
+
+# IDE and OS files
+.DS_Store
+.vscode/
+.idea/
+
+# Reference images and other non-text directories
+/reference-image/
