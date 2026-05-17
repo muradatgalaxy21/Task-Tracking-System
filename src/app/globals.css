@@ -316,6 +316,11 @@ body {
 /* Priority badges                                                     */
 /* ------------------------------------------------------------------ */
 
+.priority-urgent {
+  background: rgba(185, 28, 28, 0.1);
+  color: #b91c1c;
+  font-weight: 600;
+}
 .priority-high {
   background: rgba(224, 107, 107, 0.12);
   color: #c85555;
@@ -391,6 +396,24 @@ body {
   border: 1px solid rgba(55, 53, 47, 0.06);
   border-radius: 0.75rem;
   min-height: 400px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Deep Dive panel slide-in                                            */
+/* ------------------------------------------------------------------ */
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* Hide scrollbar utility */
