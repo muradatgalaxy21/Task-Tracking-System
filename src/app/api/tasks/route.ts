@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { hasMinimumRole } from "@/lib/rbac";
 import { resolveEffectiveRole } from "@/lib/rbac-utils";
 import { STATUS_LABELS } from "@/lib/types";
+import { writeAuditLog } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -119,6 +120,21 @@ export async function POST(req: Request) {
       },
     });
 
+    // Log task creation — fire-and-forget
+    const creator = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { full_name: true, email: true },
+    });
+    writeAuditLog({
+      workspace_id: workspace_id || null,
+      user_id: session.user.id,
+      actor_name: creator?.full_name || creator?.email || "Unknown",
+      actor_email: creator?.email,
+      event_type: "task_created",
+      entity_id: task.task_id,
+      entity_name: task.title,
+    });
+
     return NextResponse.json(task);
   } catch (error) {
     console.error("Failed to create task:", error);
@@ -159,7 +175,7 @@ export async function PATCH(req: Request) {
 
     const currentTask = await prisma.taskLedger.findUnique({
       where: { task_id },
-      select: { status: true, workspace_id: true, assignee_id: true },
+      select: { title: true, status: true, workspace_id: true, assignee_id: true, review_submitted_at: true },
     });
 
     if (!currentTask) {
@@ -227,6 +243,41 @@ export async function PATCH(req: Request) {
       }
     }
 
+    // Capture the moment the member submits for review (only on first transition to In Review).
+    // This timestamp is used instead of completed_at for fair multiplier calculation,
+    // so admin delay in approving does not penalise the member.
+    const setReviewSubmittedAt =
+      status === "In Review" &&
+      currentTask.status !== "In Review" &&
+      !currentTask.review_submitted_at
+        ? { review_submitted_at: new Date() }
+        : {};
+
+    // When a task is reverted from a terminal/review state, wipe stale timing data
+    // so any subsequent completion is judged on fresh timing — not a stale review timestamp.
+    const revertResetData: Record<string, unknown> = {};
+    if (status !== undefined && status !== currentTask.status) {
+      if (
+        currentTask.status === "Completed" &&
+        status !== "Completed" &&
+        status !== "Discarded"
+      ) {
+        // Re-opening a completed task: clear all completion tracking
+        revertResetData.completed_at = null;
+        revertResetData.multiplier_earned = null;
+        revertResetData.review_submitted_at = null;
+      } else if (
+        currentTask.status === "In Review" &&
+        status !== "In Review" &&
+        status !== "Completed" &&
+        status !== "Discarded"
+      ) {
+        // Sent back from review for rework: clear the review timestamp
+        // so the next review submission is treated as a fresh attempt
+        revertResetData.review_submitted_at = null;
+      }
+    }
+
     const updatedTask = await prisma.taskLedger.update({
       where: { task_id },
       data: {
@@ -234,6 +285,8 @@ export async function PATCH(req: Request) {
         ...(status !== undefined ? { status } : {}),
         ...(multiplier_earned !== undefined ? { multiplier_earned } : {}),
         ...(status === "Completed" ? { completed_at: new Date() } : {}),
+        ...setReviewSubmittedAt,
+        ...revertResetData,
         ...(description !== undefined ? { description } : {}),
         ...(ai_model_used !== undefined ? { ai_model_used: ai_model_used || null } : {}),
         ...(benchmark_score !== undefined ? { benchmark_score: benchmark_score || null } : {}),
@@ -266,6 +319,33 @@ export async function PATCH(req: Request) {
           metadata: JSON.stringify({ old_status: currentTask.status, new_status: status }),
         },
       });
+
+      // Audit log for status change
+      writeAuditLog({
+        workspace_id: currentTask.workspace_id,
+        user_id: session.user.id,
+        actor_name,
+        actor_email: dbUser?.email,
+        event_type: "task_status_change",
+        entity_id: task_id,
+        entity_name: updatedTask.title,
+        metadata: { from: currentTask.status, to: status, from_label: fromLabel, to_label: toLabel },
+      });
+    }
+
+    // Audit log for title edit — compare against old title captured before the update
+    if (title !== undefined && title !== currentTask.title) {
+      const editor = await prisma.user.findUnique({ where: { id: session.user.id }, select: { full_name: true, email: true } });
+      writeAuditLog({
+        workspace_id: currentTask.workspace_id,
+        user_id: session.user.id,
+        actor_name: editor?.full_name || editor?.email || "Unknown",
+        actor_email: editor?.email,
+        event_type: "task_edited",
+        entity_id: task_id,
+        entity_name: title,
+        metadata: { field: "title", old_value: currentTask.title },
+      });
     }
 
     return NextResponse.json(updatedTask);
@@ -295,7 +375,7 @@ export async function DELETE(req: Request) {
   try {
     const task = await prisma.taskLedger.findUnique({
       where: { task_id: id },
-      select: { workspace_id: true, assignee_id: true, status: true },
+      select: { workspace_id: true, assignee_id: true, status: true, title: true },
     });
 
     if (!task) {
@@ -329,7 +409,19 @@ export async function DELETE(req: Request) {
       }
     }
 
+    const deleter = await prisma.user.findUnique({ where: { id: session.user.id }, select: { full_name: true, email: true } });
     await prisma.taskLedger.delete({ where: { task_id: id } });
+
+    writeAuditLog({
+      workspace_id: task.workspace_id,
+      user_id: session.user.id,
+      actor_name: deleter?.full_name || deleter?.email || "Unknown",
+      actor_email: deleter?.email,
+      event_type: "task_deleted",
+      entity_id: id,
+      entity_name: task.title,
+    });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Failed to delete task:", error);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
+import { writeAuditLog } from "@/lib/audit";
 
 export async function POST(req: Request) {
   try {
@@ -61,6 +62,17 @@ export async function POST(req: Request) {
         },
       });
     }
+
+    // Log the signup event — workspace_id is null since the user has no workspace yet
+    writeAuditLog({
+      workspace_id: null,
+      user_id: user.id,
+      actor_name: user.email || "Unknown",
+      actor_email: user.email,
+      event_type: "user_signup",
+      entity_id: user.id,
+      entity_name: user.email,
+    });
 
     return NextResponse.json({ id: user.id, email: user.email });
   } catch (error) {

@@ -6,6 +6,7 @@ import GithubProvider from "next-auth/providers/github";
 import bcrypt from "bcryptjs";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+import { writeAuditLog } from "@/lib/audit";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -73,6 +74,21 @@ export const authOptions: NextAuthOptions = {
 
   session: {
     strategy: "jwt",
+  },
+
+  events: {
+    async signIn({ user, isNewUser }) {
+      const eventType = isNewUser ? "user_signup" : "user_login";
+      writeAuditLog({
+        workspace_id: null,
+        user_id: user.id,
+        actor_name: (user as { full_name?: string | null }).full_name || user.email || "Unknown",
+        actor_email: user.email,
+        event_type: eventType,
+        entity_id: user.id,
+        entity_name: (user as { full_name?: string | null }).full_name || user.email || "Unknown",
+      });
+    },
   },
 
   callbacks: {
