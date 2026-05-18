@@ -56,4 +56,6 @@ venv/
 /reference-image/
 /dev.db
 
-.test-prisma.ts
+test-prisma.ts
+db-admin.mjs
+

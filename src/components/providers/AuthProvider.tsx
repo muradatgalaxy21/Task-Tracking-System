@@ -105,6 +105,14 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
     setRefreshKey((prev) => prev + 1);
   }, []);
 
+  // Redirect to login immediately when the session expires or user logs out
+  // while on a protected route — prevents the back-button bfcache from showing the UI.
+  useEffect(() => {
+    if (status === "unauthenticated" && pathname.startsWith("/dashboard")) {
+      router.replace("/login");
+    }
+  }, [status, pathname, router]);
+
   // Re-sync when the tab regains focus (handles session expiry edge cases)
   useEffect(() => {
     const handleVisibility = () => {

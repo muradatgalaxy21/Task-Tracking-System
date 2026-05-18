@@ -25,6 +25,13 @@ export const proxy = withAuth(
       const url = new URL('/dashboard', req.url);
       return NextResponse.redirect(url);
     }
+
+    // Prevent browser from caching protected pages so back-button after logout
+    // never shows a stale dashboard UI.
+    const res = NextResponse.next();
+    res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.headers.set("Pragma", "no-cache");
+    return res;
   },
   {
     callbacks: {
