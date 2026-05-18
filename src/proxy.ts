@@ -41,11 +41,8 @@ export const proxy = withAuth(
 );
 
 export const config = {
-  matcher: [
-    // Protect dashboard, onboarding
-    "/dashboard/:path*",
-    "/onboarding",
-    // Exclude login and static files
-    "/((?!login|api/auth|api/user|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  // Only intercept routes that require authentication.
+  // Login, signup, and all API/auth routes are intentionally excluded
+  // so unauthenticated users can always reach the login page.
+  matcher: ["/dashboard/:path*", "/admin/:path*", "/onboarding"],
 };
