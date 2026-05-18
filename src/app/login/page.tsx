@@ -26,12 +26,14 @@ export default function AuthPage() {
   const [oauthLoading, setOauthLoading] = useState<"google" | "github" | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   const resetForm = () => {
     setStep("email");
     setWorkspaceAction(null);
     setError("");
     setSuccess(false);
+    setMagicLinkSent(false);
     setPassword("");
     setWorkspaceName("");
     setInviteCode("");
@@ -187,6 +189,40 @@ export default function AuthPage() {
     }
   };
 
+  // Send a passwordless magic link — works for both new and existing users.
+  // Checks if the email exists first so the callbackUrl can be set correctly:
+  // existing users land on /dashboard, new users land on /onboarding (which handles workspace + profile).
+  const handleMagicLink = async () => {
+    setError("");
+
+    if (!email.trim()) {
+      setError("Please enter your email address first.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/user/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+
+      if (!res.ok) throw new Error();
+      const { exists } = await res.json();
+
+      // New users go to /onboarding so workspace + profile setup can happen there
+      const callbackUrl = exists ? "/dashboard" : "/onboarding";
+
+      await signIn("email", { email: email.trim(), callbackUrl, redirect: false });
+      setMagicLinkSent(true);
+    } catch {
+      setError("Failed to send the sign-in link. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // OAuth sign-in via Google or GitHub
   const handleOAuth = async (provider: "google" | "github") => {
     setOauthLoading(provider);
@@ -292,7 +328,7 @@ export default function AuthPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => { setEmail(e.target.value); setMagicLinkSent(false); }}
                   placeholder="you@company.com"
                   className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder:text-gray-300 focus:ring-2 focus:ring-[#7b2c51]/20 focus:border-[#7b2c51] outline-none transition-all bg-gray-50"
                   required
@@ -300,6 +336,7 @@ export default function AuthPage() {
                   autoFocus
                 />
               </div>
+
               <button
                 type="submit"
                 disabled={loading}
@@ -307,6 +344,22 @@ export default function AuthPage() {
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Continue"}
               </button>
+
+              {/* Magic link — available for both new and existing users */}
+              {magicLinkSent ? (
+                <div className="px-3.5 py-2.5 rounded-lg bg-green-50 border border-green-100 text-green-700 text-sm text-center">
+                  Sign-in link sent. Check your inbox.
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleMagicLink}
+                  disabled={loading}
+                  className="w-full text-center text-xs text-gray-400 hover:text-[#7b2c51] transition-colors disabled:opacity-50"
+                >
+                  Or get a sign-in link via email
+                </button>
+              )}
             </form>
           )}
 
