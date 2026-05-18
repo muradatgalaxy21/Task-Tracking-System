@@ -1,17 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSQL } from "@prisma/adapter-libsql";
-import { createClient } from "@libsql/client";
 
 // globalThis persists across Next.js hot-reloads in dev, preventing multiple PrismaClient instances
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
-// Connect to Turso via the libSQL driver and attach the adapter for Prisma
-const libsql = createClient({
+// Pass config object directly — avoids the separate createClient import and resolves the type mismatch on Vercel
+const adapter = new PrismaLibSQL({
   url: process.env.DATABASE_URL!,
   authToken: process.env.TURSO_AUTH_TOKEN!,
 });
-
-const adapter = new PrismaLibSQL(libsql);
 
 export const prisma =
   globalForPrisma.prisma ||
