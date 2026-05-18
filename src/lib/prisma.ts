@@ -1,23 +1,21 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSQL } from "@prisma/adapter-libsql";
+import { createClient } from "@libsql/client";
 
 // globalThis persists across Next.js hot-reloads in dev, preventing multiple PrismaClient instances
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
+const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
-function createPrismaClient(): PrismaClient {
-  // In production, pass config directly to PrismaLibSQL — v6 does not accept a pre-built Client
-  if (process.env.NODE_ENV === "production") {
-    const adapter = new PrismaLibSQL({
-      url: process.env.DATABASE_URL!,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    });
-    return new PrismaClient({ adapter });
-  }
-  // In development, fall back to local SQLite file
-  return new PrismaClient();
-}
+// Connect to Turso via the libSQL driver and attach the adapter for Prisma
+const libsql = createClient({
+  url: process.env.DATABASE_URL!,
+  authToken: process.env.TURSO_AUTH_TOKEN!,
+});
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+const adapter = new PrismaLibSQL(libsql);
 
-// Only cache on globalThis in development; production serverless functions do not hot-reload
+export const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({ adapter });
+
+// Cache the instance on globalThis in development to prevent multiple clients on hot-reload
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
