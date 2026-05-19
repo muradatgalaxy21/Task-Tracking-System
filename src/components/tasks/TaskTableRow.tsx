@@ -7,8 +7,9 @@ import type { TaskLedger, Profile, TaskStatus, TaskPriority } from "@/lib/types"
 import { STATUS_LABELS } from "@/lib/types";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { getMultiplier } from "@/lib/calculations";
+import { getDeadlineInfo } from "@/lib/deadline-utils";
 import { useState } from "react";
-import { Trash2, AlertTriangle, Zap } from "lucide-react";
+import { Trash2, AlertTriangle, Zap, Clock } from "lucide-react";
 
 interface TaskTableRowProps {
   task: TaskLedger;
@@ -28,12 +29,8 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
 
   const assignee = members.find((m) => m.id === task.assignee_id);
 
-  const isOverdue =
-    new Date(task.max_deadline) < new Date() && task.status !== "Completed";
-
-  const daysRemaining = Math.ceil(
-    (new Date(task.max_deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-  );
+  const deadline = getDeadlineInfo(task.max_deadline);
+  const showDeadlineColor = task.status !== "Completed" && task.status !== "Discarded";
 
   const totalSubTasks = task.sub_tasks?.length || 0;
   const completedSubTasks =
@@ -44,7 +41,8 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
       ? (task.multiplier_earned ??
           getMultiplier(
             task.completed_at || new Date().toISOString(),
-            task.max_deadline
+            task.max_deadline,
+            task.review_submitted_at
           ).multiplier)
       : null;
 
@@ -100,7 +98,7 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
         dark:bg-white/[0.015]
         dark:hover:bg-[#050508] dark:hover:outline dark:hover:outline-1 dark:hover:outline-zinc-700
         ${selectedClasses}
-        ${isOverdue ? "bg-red-50/30 dark:bg-red-950/20" : ""}
+        ${showDeadlineColor && deadline.isOverdue ? "bg-red-50/30 dark:bg-red-950/20" : ""}
       `}
       onClick={() => onOpenPanel(task)}
     >
@@ -110,7 +108,7 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
           <span className="text-sm font-medium text-neutral-800 truncate max-w-[250px]">
             {task.title}
           </span>
-          {isOverdue && <AlertTriangle size={13} className="text-red-400 shrink-0" />}
+          {showDeadlineColor && deadline.isOverdue && <AlertTriangle size={13} className="text-red-400 shrink-0" />}
         </div>
       </td>
 
@@ -157,13 +155,14 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
       {/* Deadline */}
       <td className="px-3 py-2.5">
         <span
-          className={`text-xs ${isOverdue ? "text-red-500 font-medium" : "text-neutral-500"}`}
+          className={`inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded ${
+            showDeadlineColor
+              ? `${deadline.colorClass} ${deadline.bgClass}`
+              : "text-neutral-500"
+          }`}
         >
-          {daysRemaining > 0
-            ? `${daysRemaining}d left`
-            : daysRemaining === 0
-            ? "Due today"
-            : `${Math.abs(daysRemaining)}d overdue`}
+          {showDeadlineColor && deadline.isOverdue && <AlertTriangle size={10} />}
+          {showDeadlineColor ? deadline.label : new Date(task.max_deadline).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
         </span>
       </td>
 

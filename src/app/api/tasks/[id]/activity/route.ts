@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { sendMentionEmail } from "@/lib/email";
+import { writeAuditLog } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,22 @@ export async function POST(
         content: content.trim(),
         actorName: actor_name,
         actorId: session.user.id,
+      });
+
+      // Audit log for comment — fetch task workspace + title
+      const taskMeta = await prisma.taskLedger.findUnique({
+        where: { task_id: id },
+        select: { workspace_id: true, title: true },
+      });
+      writeAuditLog({
+        workspace_id: taskMeta?.workspace_id,
+        user_id: session.user.id,
+        actor_name,
+        actor_email: dbUser?.email,
+        event_type: "task_comment",
+        entity_id: id,
+        entity_name: taskMeta?.title,
+        metadata: { preview: content.trim().slice(0, 120) },
       });
     }
 

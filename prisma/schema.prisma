@@ -117,9 +117,11 @@ model TaskLedger {
   status            String    @default("Todo")
   priority          String?
   max_deadline      DateTime
-  created_at        DateTime  @default(now())
-  completed_at      DateTime?
-  multiplier_earned Float?
+  created_at           DateTime  @default(now())
+  completed_at         DateTime?
+  // Set when task is first moved to "In Review" — used for fair multiplier calculation.
+  review_submitted_at  DateTime?
+  multiplier_earned    Float?
 
   ai_model_used   String?
   benchmark_score String?
@@ -222,6 +224,22 @@ model Invitation {
 
   workspace          Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   invited_by         User      @relation("InvitationsCreated", fields: [invited_by_id], references: [id], onDelete: Cascade)
+}
+
+// Central audit log for admin oversight. Captures task lifecycle events and auth events.
+// workspace_id is null for auth events (login / signup).
+model AuditLog {
+  id           String   @id @default(uuid())
+  workspace_id String?
+  user_id      String?
+  actor_name   String
+  actor_email  String?
+  // task_created | task_deleted | task_status_change | task_edited | task_comment | user_login | user_signup
+  event_type   String
+  entity_id    String?  // task_id or user_id
+  entity_name  String?  // task title or user name
+  metadata     String?  // JSON — extra fields (old/new status, field name, etc.)
+  created_at   DateTime @default(now())
 }
 
 // Holds a pending profile update for Admin/Owner users that requires

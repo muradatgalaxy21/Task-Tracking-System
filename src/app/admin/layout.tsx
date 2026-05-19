@@ -43,6 +43,13 @@ export default async function AdminLayout({
           <span className="text-sm font-semibold text-white/70">AI and Beyond</span>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/admin" className="text-xs text-white/50 hover:text-white/80 transition-colors">
+            Overview
+          </Link>
+          <Link href="/admin/logs" className="text-xs text-white/50 hover:text-white/80 transition-colors">
+            Audit Logs
+          </Link>
+          <span className="text-white/10">|</span>
           <span className="text-xs text-white/30">{dbUser?.email}</span>
           <Link
             href="/dashboard"

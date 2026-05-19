@@ -40,6 +40,8 @@ export interface TaskLedger {
   max_deadline: string;
   created_at: string;
   completed_at: string | null;
+  // Timestamp of when the task was first submitted for review (used for fair multiplier scoring).
+  review_submitted_at: string | null;
   // Priority level for the task (optional, null for legacy tasks)
   priority: TaskPriority | null;
   // Workspace association (optional, null for legacy tasks)

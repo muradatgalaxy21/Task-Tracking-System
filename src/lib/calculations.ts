@@ -1,9 +1,9 @@
 // -------------------------------------------------------------------
-// Calculation Engine (v2)
+// Calculation Engine (v3)
 // Implements the updated scoring and payout formulas:
 //   - Penalty Multiplier (per task, stored at completion)
-//   - Task Performance Score (TPS) via weekly calendar-week averages
-//   - Attendance Score (AS) via daily_attendance present-day count
+//   - Task Performance Score (TPS) via weekly calendar-week averages — max 65
+//   - Attendance Score (AS) via daily_attendance present-day count — max 35
 //   - Payout Distribution (3-tier: Treasury / Base / Performance)
 // -------------------------------------------------------------------
 
@@ -17,36 +17,43 @@ import type { TaskLedger, DailyAttendance } from "@/lib/types";
 
 export interface MultiplierResult {
   multiplier: number;
-  daysLate: number;
+  hoursLate: number; // hours past deadline (0 = on time)
   label: string;
 }
 
 export function getMultiplier(
   completedAt: string | null,
-  maxDeadline: string
+  maxDeadline: string,
+  reviewSubmittedAt?: string | null
 ): MultiplierResult {
   // If task is not completed yet, return 0 (no multiplier earned)
   if (!completedAt) {
-    return { multiplier: 0, daysLate: 0, label: "Incomplete" };
+    return { multiplier: 0, hoursLate: 0, label: "Incomplete" };
   }
 
-  const completed = new Date(completedAt);
-  const deadline = new Date(maxDeadline);
+  // Use review_submitted_at if available — member should not be penalised for admin delay
+  // in approving a review. The moment the member submitted the task for review is the
+  // fair reference point for on-time measurement.
+  const referenceDate = reviewSubmittedAt ? reviewSubmittedAt : completedAt;
+  const diffMs = new Date(referenceDate).getTime() - new Date(maxDeadline).getTime();
 
-  // Calculate positive difference in days (negative means on time)
-  const diffMs = completed.getTime() - deadline.getTime();
-  const daysLate = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  // Hour-precision lateness — each started hour counts
+  const hoursLate = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)));
 
-  // Apply the updated tiered penalty structure
-  if (daysLate === 0) {
-    return { multiplier: 1.0, daysLate, label: "On Time" };
-  } else if (daysLate === 1) {
-    return { multiplier: 0.60, daysLate, label: "1 Day Late" };
-  } else if (daysLate === 2) {
-    return { multiplier: 0.40, daysLate, label: "2 Days Late" };
+  if (hoursLate === 0) {
+    return { multiplier: 1.0, hoursLate, label: "On Time" };
+  } else if (hoursLate <= 24) {
+    // Up to 24 hours late
+    return { multiplier: 0.60, hoursLate, label: `${hoursLate}h Late` };
+  } else if (hoursLate <= 48) {
+    // 24–48 hours late
+    return { multiplier: 0.40, hoursLate, label: `${hoursLate}h Late` };
   } else {
-    // 3 or more days late: zero multiplier (no credit earned)
-    return { multiplier: 0.0, daysLate, label: `${daysLate} Days Late` };
+    // More than 48 hours late: zero credit
+    const days = Math.floor(hoursLate / 24);
+    const hrs = hoursLate % 24;
+    const label = hrs > 0 ? `${days}d ${hrs}h Late` : `${days}d Late`;
+    return { multiplier: 0.0, hoursLate, label };
   }
 }
 
@@ -79,9 +86,9 @@ function getCalendarWeekOfMonth(date: Date): 1 | 2 | 3 | 4 {
 //   - Filter completed tasks for the target month.
 //   - Group into 4 calendar-week buckets (Mon-Sun).
 //   - Weekly Avg = Sum(multipliers in week) / Tasks in week
-//   - TPS = ((W1 + W2 + W3 + W4) / 4) * 80
+//   - TPS = ((W1 + W2 + W3 + W4) / 4) * 65
 //   - Weeks with no tasks contribute 0 to the average.
-// Max TPS = 80
+// Max TPS = 65
 // ------------------------------------
 
 export interface WeeklyBreakdown {
@@ -98,7 +105,7 @@ export interface TPSResult {
     taskId: string;
     title: string;
     multiplier: number;
-    daysLate: number;
+    hoursLate: number;
     label: string;
     completedAt: string | null;
     weekOfMonth: number | null;
@@ -130,10 +137,10 @@ export function calculateTPS(
     const isCompleted = task.status === "Completed" && !!task.completed_at;
     // Use stored multiplier_earned if available; fall back to dynamic calculation
     const storedMultiplier = task.multiplier_earned;
-    const { multiplier, daysLate, label } =
+    const { multiplier, hoursLate, label } =
       storedMultiplier != null
-        ? { multiplier: storedMultiplier, daysLate: 0, label: "Stored" }
-        : getMultiplier(task.completed_at, task.max_deadline);
+        ? { multiplier: storedMultiplier, hoursLate: 0, label: "Stored" }
+        : getMultiplier(task.completed_at, task.max_deadline, task.review_submitted_at);
 
     const weekOfMonth =
       isCompleted && task.completed_at
@@ -144,7 +151,7 @@ export function calculateTPS(
       taskId: task.task_id,
       title: task.title,
       multiplier: isCompleted ? multiplier : 0,
-      daysLate,
+      hoursLate,
       label: isCompleted ? label : "Not Completed",
       completedAt: task.completed_at,
       weekOfMonth,
@@ -166,7 +173,7 @@ export function calculateTPS(
     const m =
       task.multiplier_earned != null
         ? task.multiplier_earned
-        : getMultiplier(task.completed_at, task.max_deadline).multiplier;
+        : getMultiplier(task.completed_at, task.max_deadline, task.review_submitted_at).multiplier;
     weekBuckets[week].push(m);
   }
 
@@ -194,31 +201,30 @@ export function calculateTPS(
           multiplier:
             t.multiplier_earned != null
               ? t.multiplier_earned
-              : getMultiplier(t.completed_at, t.max_deadline).multiplier,
+              : getMultiplier(t.completed_at, t.max_deadline, t.review_submitted_at).multiplier,
           completedAt: t.completed_at!,
         })),
       average: Math.round(avg * 1000) / 1000,
     });
   }
 
-  // TPS = mean of 4 weekly averages * 80
+  // TPS = mean of 4 weekly averages * 65
   const meanAvg =
     (weeklyAverages[0] +
       weeklyAverages[1] +
       weeklyAverages[2] +
       weeklyAverages[3]) /
     4;
-  const score = Math.round(meanAvg * 80 * 100) / 100;
+  const score = Math.round(meanAvg * 65 * 100) / 100;
 
   return { score, weeklyBreakdown, details };
 }
 
 // ------------------------------------
 // 4. ATTENDANCE SCORE (AS)
-// Formula: AS = (Present Days / Total Scheduled Days) * 20
-// Total Scheduled Days = dynamically computed as working days (Mon-Fri)
-// in the target month. Excludes Saturday and Sunday.
-// Max AS = 20
+// Formula: AS = (Present Days / Total Scheduled Days) * 35
+// Total Scheduled Days = fixed: 25 for most months, 24 for February.
+// Max AS = 35
 // ------------------------------------
 
 export function getWorkingDaysInMonth(year: number, month: number): number {
@@ -250,7 +256,7 @@ export function calculateAS(
   // Guard against division by zero in months with no working days
   if (totalScheduled === 0) return 0;
 
-  const score = (presentDays / totalScheduled) * 20;
+  const score = (presentDays / totalScheduled) * 35;
   return Math.round(score * 100) / 100;
 }
 

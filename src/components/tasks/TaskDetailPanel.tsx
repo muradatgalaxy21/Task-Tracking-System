@@ -6,6 +6,7 @@ import { STATUS_LABELS } from "@/lib/types";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { getMultiplier } from "@/lib/calculations";
+import { getDeadlineInfo } from "@/lib/deadline-utils";
 import ActivityFeed from "@/components/tasks/ActivityFeed";
 import {
   X,
@@ -397,10 +398,9 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
     ? assignee.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : "?";
 
-  const isOverdue = new Date(task.max_deadline) < new Date() && task.status !== "Completed";
-  const daysRemaining = Math.ceil(
-    (new Date(task.max_deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-  );
+  const deadline = getDeadlineInfo(task.max_deadline);
+  const isOverdue = deadline.isOverdue && task.status !== "Completed" && task.status !== "Discarded";
+  const showDeadlineColor = task.status !== "Completed" && task.status !== "Discarded";
 
   const taskDisplayId = `AB-${task.task_id.slice(0, 6).toUpperCase()}`;
 
@@ -415,7 +415,7 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
   const displayMultiplier =
     task.status === "Completed"
       ? (task.multiplier_earned ??
-          getMultiplier(task.completed_at || new Date().toISOString(), task.max_deadline).multiplier)
+          getMultiplier(task.completed_at || new Date().toISOString(), task.max_deadline, task.review_submitted_at).multiplier)
       : null;
 
   // Close on Escape
@@ -452,7 +452,8 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
     try {
       const updateData: Record<string, unknown> = { task_id: task.task_id, status: newStatus };
       if (newStatus === "Completed") {
-        const { multiplier } = getMultiplier(new Date().toISOString(), task.max_deadline);
+        // Use review_submitted_at as reference if available — protects member from admin delay penalty
+        const { multiplier } = getMultiplier(new Date().toISOString(), task.max_deadline, task.review_submitted_at);
         updateData.multiplier_earned = multiplier;
       }
       const res = await fetch("/api/tasks", {
@@ -635,12 +636,11 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
                   Deadline
                 </span>
                 <span
-                  className={`flex items-center gap-1 text-xs ${
-                    isOverdue ? "text-red-500 font-medium" : "text-neutral-700"
+                  className={`flex items-center gap-1 text-xs font-medium ${
+                    showDeadlineColor ? deadline.colorClass : "text-neutral-700"
                   }`}
                 >
                   {isOverdue ? <AlertTriangle size={11} /> : <Clock size={11} />}
-                  {/* Show date and time if a non-midnight time was set */}
                   {new Date(task.max_deadline).toLocaleString("en-US", {
                     month: "short",
                     day: "numeric",
@@ -648,13 +648,11 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
                     hour: "numeric",
                     minute: "2-digit",
                   })}
-                  <span className="text-neutral-400">
-                    {isOverdue
-                      ? ` (${Math.abs(daysRemaining)}d overdue)`
-                      : daysRemaining === 0
-                      ? " (today)"
-                      : ` (${daysRemaining}d left)`}
-                  </span>
+                  {showDeadlineColor && (
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${deadline.bgClass} ${deadline.colorClass}`}>
+                      {deadline.label}
+                    </span>
+                  )}
                 </span>
               </div>
 
@@ -883,17 +881,39 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
             {allowedTransitions.length > 0 && (
               <>
                 <div className="border-t border-neutral-100" />
-                <div className="flex gap-2 flex-wrap">
-                  {allowedTransitions.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => handleStatusChange(s)}
-                      disabled={saving}
-                      className="btn-ghost text-xs py-1.5 px-3"
-                    >
-                      Move to {STATUS_LABELS[s] ?? s}
-                    </button>
-                  ))}
+                <div className="space-y-2">
+                  <p className="text-[10px] uppercase tracking-wider font-semibold text-neutral-400">Move to</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {(["Todo", "In Progress", "In Review", "Completed", "Discarded"] as TaskStatus[])
+                      .filter((s) => allowedTransitions.includes(s))
+                      .map((s) => {
+                        const colorMap: Record<TaskStatus, string> = {
+                          "Todo":        "bg-neutral-100 text-neutral-600 border-neutral-200 hover:bg-neutral-200",
+                          "In Progress": "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100",
+                          "In Review":   "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100",
+                          "Completed":   "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100",
+                          "Discarded":   "bg-red-50 text-red-600 border-red-200 hover:bg-red-100",
+                        };
+                        const dotMap: Record<TaskStatus, string> = {
+                          "Todo":        "bg-neutral-400",
+                          "In Progress": "bg-blue-500",
+                          "In Review":   "bg-amber-500",
+                          "Completed":   "bg-emerald-500",
+                          "Discarded":   "bg-red-400",
+                        };
+                        return (
+                          <button
+                            key={s}
+                            onClick={() => handleStatusChange(s)}
+                            disabled={saving}
+                            className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border transition-all ${colorMap[s]}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${dotMap[s]}`} />
+                            {STATUS_LABELS[s] ?? s}
+                          </button>
+                        );
+                      })}
+                  </div>
                 </div>
               </>
             )}

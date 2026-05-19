@@ -7,6 +7,7 @@ import type { TaskLedger, Profile } from "@/lib/types";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { getMultiplier } from "@/lib/calculations";
+import { getDeadlineInfo } from "@/lib/deadline-utils";
 import {
   Clock,
   Trash2,
@@ -43,14 +44,9 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
   const canDelete = isWorkspaceAdmin || (isWorkspaceManager && user?.id === task.assignee_id && !isLocked);
 
   const isDiscarded = task.status === "Discarded";
-  const isOverdue   =
-    new Date(task.max_deadline) < new Date() &&
-    task.status !== "Completed" &&
-    task.status !== "Discarded";
-
-  const daysRemaining = Math.ceil(
-    (new Date(task.max_deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-  );
+  const deadline    = getDeadlineInfo(task.max_deadline);
+  // Completed and Discarded tasks don't show urgency coloring
+  const showDeadlineColor = task.status !== "Completed" && task.status !== "Discarded";
 
   const totalSubTasks = task.sub_tasks?.length || 0;
   const completedSubTasks =
@@ -61,7 +57,8 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
       ? (task.multiplier_earned ??
           getMultiplier(
             task.completed_at || new Date().toISOString(),
-            task.max_deadline
+            task.max_deadline,
+            task.review_submitted_at
           ).multiplier)
       : null;
 
@@ -95,7 +92,7 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
   return (
     <div
       className={`glass-card-hover p-3.5 space-y-2.5 cursor-pointer ${
-        isOverdue ? "border-red-300/60" : ""
+        showDeadlineColor && deadline.isOverdue ? "border-red-300/60" : ""
       } ${isDiscarded ? "opacity-60" : ""}`}
       onClick={() => onOpenPanel(task)}
     >
@@ -121,16 +118,18 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
       {/* Deadline + sub-task progress + multiplier */}
       <div className="flex items-center gap-3 flex-wrap">
         <span
-          className={`flex items-center gap-1 text-xs ${
-            isOverdue ? "text-red-500 font-medium" : "text-neutral-400"
+          className={`flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded ${
+            showDeadlineColor
+              ? `${deadline.colorClass} ${deadline.bgClass}`
+              : "text-neutral-400"
           }`}
         >
-          {isOverdue ? <AlertTriangle size={11} /> : <Clock size={11} />}
-          {daysRemaining > 0
-            ? `${daysRemaining}d left`
-            : daysRemaining === 0
-            ? "Due today"
-            : `${Math.abs(daysRemaining)}d overdue`}
+          {showDeadlineColor && deadline.isOverdue
+            ? <AlertTriangle size={11} />
+            : <Clock size={11} />}
+          {task.status === "Completed" || task.status === "Discarded"
+            ? new Date(task.max_deadline).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+            : deadline.label}
         </span>
 
         {totalSubTasks > 0 && (
