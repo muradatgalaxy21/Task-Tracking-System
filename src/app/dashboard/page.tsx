@@ -20,6 +20,9 @@ export default function DashboardPage() {
   });
 
   useEffect(() => {
+    // Do not fetch until auth (session + profile) has fully resolved
+    if (authLoading) return;
+
     const fetchStats = async () => {
       try {
         const [membersRes, tasksRes, attendanceRes] = await Promise.all([
@@ -81,13 +84,13 @@ export default function DashboardPage() {
     };
 
     fetchStats();
-  }, [refreshKey, isAdmin, user?.id]);
+  }, [authLoading, refreshKey, isAdmin, user?.id]);
 
   if (authLoading) {
     return (
       <div className="space-y-6">
         <div className="skeleton h-10 w-64" />
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => <div key={i} className="skeleton h-24 rounded-xl" />)}
         </div>
         <div className="skeleton h-96 rounded-xl" />
@@ -139,7 +142,7 @@ export default function DashboardPage() {
     <div className="space-y-8 animate-fade-in">
       {/* Page header */}
       <div>
-        <h1 className="text-2xl font-semibold text-neutral-800">
+        <h1 className="text-xl sm:text-2xl font-semibold text-neutral-800">
           Welcome back, {displayName}
         </h1>
         <p className="text-sm text-neutral-400 mt-1">

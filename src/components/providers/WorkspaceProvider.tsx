@@ -42,7 +42,8 @@ export function useWorkspace() {
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  // authLoading is needed so we can distinguish "session still resolving" from "no user"
+  const { user, loading: authLoading } = useAuth();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null);
   const [wsLoading, setWsLoading] = useState(true);
@@ -70,8 +71,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [user?.id]);
 
   useEffect(() => {
+    // Session is still resolving — wait before making any decisions
+    if (authLoading) return;
+
+    // Auth has settled with no user (unauthenticated) — nothing to fetch, unblock wsLoading
+    if (!user?.id) {
+      setWsLoading(false);
+      return;
+    }
+
+    // User is confirmed — fetch their workspaces
     fetchWorkspaces();
-  }, [fetchWorkspaces]);
+  }, [user?.id, authLoading, fetchWorkspaces]);
 
   const setActiveWorkspace = (ws: Workspace) => {
     setActiveWorkspaceState(ws);

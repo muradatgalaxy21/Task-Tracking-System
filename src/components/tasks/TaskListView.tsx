@@ -59,6 +59,13 @@ export default function TaskListView() {
   const [highPriority, setHighPriority] = useState(false);
   const [dueToday, setDueToday]         = useState(false);
 
+  // Extract primitives so the useCallback reference only changes when values actually change,
+  // not every time the user/profile object reference is recreated by the context provider.
+  const userId       = user?.id;
+  const userEmail    = user?.email;
+  const profileName  = profile?.full_name;
+  const profileRole  = profile?.role;
+
   const fetchData = useCallback(async () => {
     // Show empty state when no workspace is active rather than loading all data
     if (!activeWorkspace?.id) {
@@ -82,12 +89,12 @@ export default function TaskListView() {
 
       // Ensure the current user appears in the members list for task assignment display
       const finalMembers = membersData || [];
-      if (user && !finalMembers.some((m) => m.id === user.id)) {
+      if (userId && !finalMembers.some((m) => m.id === userId)) {
         finalMembers.push({
-          id: user.id,
-          email: user.email || "",
-          full_name: profile?.full_name || user.email?.split("@")[0] || "Me",
-          role: (profile?.role as any) || "Member",
+          id: userId,
+          email: userEmail || "",
+          full_name: profileName || userEmail?.split("@")[0] || "Me",
+          role: (profileRole as any) || "Member",
           created_at: new Date().toISOString(),
         });
       }
@@ -99,7 +106,7 @@ export default function TaskListView() {
     } finally {
       setLoading(false);
     }
-  }, [user, profile, activeWorkspace?.id]);
+  }, [userId, userEmail, profileName, profileRole, activeWorkspace?.id]);
 
   useEffect(() => {
     fetchData();

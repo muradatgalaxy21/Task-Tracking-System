@@ -63,38 +63,64 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [profile, setProfile] = useState<NextAuthUser | null>(null);
 
-  const loading = status === "loading";
+  // profileReady is a one-way gate: false until the first DB profile fetch settles.
+  // It never resets to false on subsequent background refreshes, so re-syncing on tab
+  // focus does not flash the skeleton after the initial load.
+  const [profileReady, setProfileReady] = useState(false);
+
+  const sessionLoading = status === "loading";
   const user = session?.user as NextAuthUser | null;
+
+  // Combined loading: true while the session is resolving OR the first profile fetch
+  // has not yet completed. Once profileReady is true it stays true permanently.
+  const loading = sessionLoading || !profileReady;
 
   // Sync profile with DB so names and roles are always fresh
   useEffect(() => {
-    if (user?.id) {
-      const syncProfile = async () => {
-        try {
-          const res = await fetch(`/api/members?id=${user.id}`);
-          if (res.ok) {
-            const data = await res.json();
-            const updated: NextAuthUser = {
-              id: user.id,
-              email: user.email,
-              full_name: data.full_name,
-              role: data.role || "Member",
-            };
-            setProfile(updated);
-
-            // Redirect to onboarding if the user has not set their name yet
-            if (!updated.full_name && pathname !== "/onboarding") {
-              router.push("/onboarding");
-            }
-          }
-        } catch (err) {
-          console.error("Failed to sync profile:", err);
-        }
-      };
-      syncProfile();
-    } else if (status === "unauthenticated") {
-      setProfile(null);
+    if (!user?.id) {
+      // Auth settled with no user — release the loading gate and clear any stale profile
+      if (!sessionLoading) {
+        setProfile(null);
+        setProfileReady(true);
+      }
+      return;
     }
+
+    const syncProfile = async () => {
+      try {
+        const res = await fetch(`/api/members?id=${user.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!data) {
+            console.warn("User not found in database, clearing profile");
+            setProfile(null);
+            // If the DB was reset, clear the NextAuth session too
+            await nextAuthSignOut({ callbackUrl: "/login" });
+            return;
+          }
+
+          const updated: NextAuthUser = {
+            id: user.id,
+            email: user.email,
+            full_name: data.full_name,
+            role: data.role || "Member",
+          };
+          setProfile(updated);
+
+          // Redirect to onboarding if the user has not set their name yet
+          if (!updated.full_name && pathname !== "/onboarding") {
+            router.push("/onboarding");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync profile:", err);
+      } finally {
+        // Always release the loading gate, even on fetch errors, so the UI never hangs
+        setProfileReady(true);
+      }
+    };
+
+    syncProfile();
   }, [user?.id, status, refreshKey, pathname, router]);
 
   const signOut = useCallback(async () => {
