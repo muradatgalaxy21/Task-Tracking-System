@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { Notification } from "@/lib/types";
+import UserAvatar from "@/components/common/UserAvatar";
 import {
   LayoutDashboard,
   LogOut,
@@ -20,8 +20,8 @@ import {
   ChevronsRight,
   Plus,
   X,
-  Bell,
   Settings,
+  MessageSquare,
 } from "lucide-react";
 
 interface NavItem {
@@ -34,7 +34,12 @@ interface NavItem {
 // Modal mode: "join" shows invite code input; "create" shows workspace creation form
 type WsModalMode = "join" | "create";
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;   // mobile drawer open state
+  onClose?: () => void; // called when mobile overlay or nav link is clicked
+}
+
+export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { profile, user, isAdmin, isOwner, refreshKey, signOut } = useAuth();
   const { workspaces, activeWorkspace, setActiveWorkspace, refreshWorkspaces } = useWorkspace();
   const pathname = usePathname();
@@ -55,35 +60,13 @@ export default function Sidebar() {
   const [newWsDesc, setNewWsDesc] = useState("");
   const [creatingWs, setCreatingWs] = useState(false);
 
-  // Notification bell state
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const notificationRef = useRef<HTMLDivElement>(null);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  const fetchNotifications = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const res = await fetch("/api/notifications");
-      if (res.ok) setNotifications(await res.json());
-    } catch {
-      // Notification fetch failure is non-critical
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications, refreshKey]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (wsDropdownRef.current && !wsDropdownRef.current.contains(e.target as Node)) {
         setWsDropdownOpen(false);
-      }
-      if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) {
-        setShowNotifications(false);
       }
     };
     document.addEventListener("mousedown", handleClick);
@@ -164,29 +147,12 @@ export default function Sidebar() {
     }
   };
 
-  const markAllRead = async () => {
-    try {
-      await fetch("/api/notifications", { method: "PATCH" });
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    } catch {
-      // Non-critical
-    }
-  };
 
-  const formatRelativeTime = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const mins = Math.floor(diff / 60_000);
-    const hours = Math.floor(diff / 3_600_000);
-    const days = Math.floor(diff / 86_400_000);
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    return `${days}d ago`;
-  };
 
   const navItems: NavItem[] = [
     { label: "Dashboard", href: "/dashboard",       icon: <LayoutDashboard size={17} /> },
     { label: "Tasks",     href: "/dashboard/tasks", icon: <CheckSquare size={17} /> },
+    { label: "Chat",      href: "/dashboard/chat",  icon: <MessageSquare size={17} /> },
     { label: "Projects",  href: "/dashboard/ledger",     icon: <FolderOpen size={17} /> },
     { label: "Team",      href: "/dashboard/attendance", icon: <Users size={17} /> },
     { label: "Reports",   href: "/dashboard/payout",     icon: <BarChart2 size={17} />, adminOnly: true },
@@ -195,10 +161,19 @@ export default function Sidebar() {
 
   return (
     <>
+      {/* Mobile backdrop overlay — only visible when drawer is open on small screens */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
       <aside
-        className={`sidebar-base fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-200 ${
+        className={`sidebar-base fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-300 ${
           collapsed ? "w-[56px]" : "w-[260px]"
-        }`}
+        } ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}`}
       >
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-4 py-4 border-b border-neutral-200/60">
@@ -293,6 +268,7 @@ export default function Sidebar() {
                   href={item.href}
                   className={`sidebar-item ${isActive ? "active" : ""}`}
                   title={collapsed ? item.label : undefined}
+                  onClick={onClose}
                 >
                   <span className="shrink-0">{item.icon}</span>
                   {!collapsed && <span>{item.label}</span>}
@@ -310,81 +286,19 @@ export default function Sidebar() {
           )}
         </nav>
 
-        {/* Notification bell */}
-        {!collapsed && (
-          <div className="px-3 py-2 border-t border-neutral-200/60" ref={notificationRef}>
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setShowNotifications(!showNotifications);
-                  if (!showNotifications && unreadCount > 0) markAllRead();
-                }}
-                className="flex items-center gap-2 w-full px-2.5 py-2 rounded-md text-xs text-neutral-500 hover:bg-neutral-100 transition-colors"
-              >
-                <div className="relative">
-                  <Bell size={15} />
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-warm-400 flex items-center justify-center text-[8px] font-bold text-white">
-                      {unreadCount > 9 ? "9+" : unreadCount}
-                    </span>
-                  )}
-                </div>
-                <span>Notifications</span>
-              </button>
 
-              {showNotifications && (
-                <div className="absolute bottom-full left-0 w-72 mb-2 bg-white border border-neutral-200 rounded-xl shadow-xl z-50 overflow-hidden animate-fade-in">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
-                    <span className="text-xs font-semibold text-neutral-700">Notifications</span>
-                    {unreadCount === 0 && (
-                      <span className="text-[10px] text-neutral-400">All read</span>
-                    )}
-                  </div>
-                  <div className="max-h-64 overflow-y-auto">
-                    {notifications.length === 0 ? (
-                      <p className="px-4 py-6 text-xs text-neutral-400 text-center">
-                        No notifications yet
-                      </p>
-                    ) : (
-                      notifications.slice(0, 15).map((n) => (
-                        <div
-                          key={n.id}
-                          className={`px-4 py-3 border-b border-neutral-50 last:border-0 ${
-                            !n.read ? "bg-warm-50/50" : ""
-                          }`}
-                        >
-                          <p className="text-xs text-neutral-700 leading-relaxed">{n.message}</p>
-                          {n.task_title && (
-                            <p className="text-[10px] text-neutral-400 mt-0.5 truncate">
-                              Task: {n.task_title}
-                            </p>
-                          )}
-                          <p className="text-[10px] text-neutral-300 mt-0.5">
-                            {formatRelativeTime(n.created_at)}
-                          </p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* User footer */}
         <div className="px-2 py-3 border-t border-neutral-200/60">
           {!collapsed && profile && (
             <div className="px-2 mb-2">
               <div className="flex items-center gap-2">
-                <div
-                  className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-[9px] font-bold text-white"
-                  style={{ background: "#e06b6b" }}
-                >
-                  {profile.full_name
-                    ? profile.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-                    : "U"}
-                </div>
+                <UserAvatar
+                  fullName={profile.full_name}
+                  image={profile.image}
+                  size={24}
+                  className="rounded-md"
+                />
                 <div className="min-w-0">
                   <p className="text-xs font-medium text-neutral-700 truncate">
                     {profile.full_name || profile.email?.split("@")[0] || "User"}
@@ -396,7 +310,7 @@ export default function Sidebar() {
             </div>
           )}
           <button
-            onClick={signOut}
+            onClick={() => { onClose?.(); signOut(); }}
             className="sidebar-item w-full text-neutral-500 hover:text-red-500"
             title={collapsed ? "Sign Out" : undefined}
           >
@@ -405,10 +319,10 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* Collapse toggle */}
+        {/* Collapse toggle — desktop only */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="absolute -right-3 top-7 w-6 h-6 rounded-full bg-white border border-neutral-200 flex items-center justify-center text-neutral-400 hover:text-neutral-600 hover:border-neutral-300 transition-all shadow-sm"
+          className="absolute -right-3 top-7 w-6 h-6 rounded-full bg-white border border-neutral-200 hidden md:flex items-center justify-center text-neutral-400 hover:text-neutral-600 hover:border-neutral-300 transition-all shadow-sm"
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? <ChevronsRight size={11} /> : <ChevronsLeft size={11} />}
@@ -559,7 +473,7 @@ export default function Sidebar() {
 
 // Clickable member list for the Admin nav section
 function MembersList() {
-  const [members, setMembers] = useState<{ id: string; full_name: string; email: string }[]>([]);
+  const [members, setMembers] = useState<{ id: string; full_name: string; email: string; image?: string | null }[]>([]);
   const { refreshKey } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const pathname = usePathname();
@@ -583,23 +497,18 @@ function MembersList() {
       {members.map((member) => {
         const href = `/dashboard/member/${member.id}`;
         const isActive = pathname === href;
-        const initials = member.full_name
-          ? member.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-          : "U";
-
         return (
           <Link
             key={member.id}
             href={href}
             className={`sidebar-item ${isActive ? "active" : ""}`}
           >
-            <span
-              className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold shrink-0 ${
-                isActive ? "bg-warm-400/15 text-warm-400" : "bg-neutral-200/60 text-neutral-500"
-              }`}
-            >
-              {initials}
-            </span>
+            <UserAvatar
+              fullName={member.full_name}
+              image={member.image}
+              size={20}
+              className="rounded"
+            />
             <span className="truncate text-sm">{member.full_name || "User"}</span>
           </Link>
         );

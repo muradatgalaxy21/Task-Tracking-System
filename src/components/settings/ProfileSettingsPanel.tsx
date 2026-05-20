@@ -3,14 +3,15 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useTheme } from "@/components/providers/ThemeProvider";
-import { Loader2, Check } from "lucide-react";
-import { getDisplayName } from "next/dist/shared/lib/utils";
+import { Loader2, Check, Camera, Trash2 } from "lucide-react";
+import UserAvatar from "@/components/common/UserAvatar";
 
 type ProfileData = {
   id: string;
   full_name: string | null;
   email: string | null;
   role: string;
+  image: string | null;
 };
 
 export default function ProfileSettingsPanel() {
@@ -19,6 +20,7 @@ export default function ProfileSettingsPanel() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [fullName, setFullName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "info" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -32,6 +34,89 @@ export default function ProfileSettingsPanel() {
     }
     load();
   }, [user?.id]);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setMessage({ type: "error", text: "Please select a valid image file." });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ type: "error", text: "Image size must be less than 5MB." });
+      return;
+    }
+
+    setUploadingImage(true);
+    setMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadRes.ok) {
+        const uploadData = await uploadRes.json();
+        throw new Error(uploadData.error || "Upload failed");
+      }
+
+      const { url } = await uploadRes.json();
+
+      const patchRes = await fetch("/api/settings/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: url }),
+      });
+
+      if (!patchRes.ok) {
+        const patchData = await patchRes.json();
+        throw new Error(patchData.error || "Failed to update profile image.");
+      }
+
+      setProfile((prev) => prev ? { ...prev, image: url } : null);
+      await refreshProfile();
+      setMessage({ type: "success", text: "Profile photo updated successfully." });
+    } catch (err: any) {
+      setMessage({ type: "error", text: err.message || "Failed to upload profile photo." });
+    } finally {
+      setUploadingImage(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!confirm("Are you sure you want to remove your profile photo?")) return;
+
+    setUploadingImage(true);
+    setMessage(null);
+
+    try {
+      const res = await fetch("/api/settings/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: null }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to remove profile photo.");
+      }
+
+      setProfile((prev) => prev ? { ...prev, image: null } : null);
+      await refreshProfile();
+      setMessage({ type: "success", text: "Profile photo removed." });
+    } catch (err: any) {
+      setMessage({ type: "error", text: err.message || "Failed to remove profile photo." });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!fullName.trim()) return;
@@ -81,7 +166,6 @@ export default function ProfileSettingsPanel() {
   }
 
   const isElevated = profile.role === "Owner" || profile.role === "Admin";
-
   return (
     <div className="bg-white rounded-xl border border-neutral-200 p-6 space-y-5">
       <div>
@@ -93,7 +177,60 @@ export default function ProfileSettingsPanel() {
         </p>
       </div>
 
-      {/* Full name */}
+      {/* Profile picture upload */}
+      <div className="flex items-center gap-5 pb-2 border-b border-neutral-100">
+        <div className="relative group shrink-0">
+          <UserAvatar
+            fullName={profile.full_name}
+            image={profile.image}
+            size={70}
+            className="rounded-full shadow-inner border border-neutral-200"
+          />
+          {uploadingImage && (
+            <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-white" />
+            </div>
+          )}
+        </div>
+        <div className="space-y-1.5 flex-1 min-w-0">
+          <span className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
+            Profile Photo
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={uploadingImage}
+              onClick={() => document.getElementById("avatar-upload-input")?.click()}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-50 transition-all flex items-center gap-1.5 text-neutral-700 disabled:opacity-50 cursor-pointer"
+            >
+              <Camera size={13} />
+              Upload Photo
+            </button>
+            {profile.image && (
+              <button
+                type="button"
+                disabled={uploadingImage}
+                onClick={handleDeletePhoto}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-100 text-red-500 hover:bg-red-50/50 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              >
+                <Trash2 size={13} />
+                Remove
+              </button>
+            )}
+          </div>
+          <input
+            id="avatar-upload-input"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageUpload}
+          />
+          <p className="text-[10px] text-neutral-400">
+            JPG, PNG or GIF. Max 5MB.
+          </p>
+        </div>
+      </div>
+
       <div>
         <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider mb-1">
           Full Name

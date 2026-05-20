@@ -13,6 +13,7 @@ import {
   UserX,
   RefreshCw,
 } from "lucide-react";
+import UserAvatar from "@/components/common/UserAvatar";
 
 type WorkspaceMemberRow = {
   id: string;
@@ -20,6 +21,7 @@ type WorkspaceMemberRow = {
   email: string | null;
   role: string;            // global role
   workspace_role: string;  // role within this workspace
+  image?: string | null;
 };
 
 const ROLE_COLOR: Record<string, string> = {
@@ -295,14 +297,12 @@ export default function WorkspaceSettingsPanel() {
             return (
               <div key={member.id} className="flex items-center justify-between px-6 py-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 text-[10px] font-bold text-white"
-                    style={{ background: "#e06b6b" }}
-                  >
-                    {member.full_name
-                      ? member.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-                      : "U"}
-                  </div>
+                  <UserAvatar
+                    fullName={member.full_name}
+                    image={member.image}
+                    size={28}
+                    className="rounded-md"
+                  />
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-neutral-700 truncate">
                       {member.full_name || "Unnamed"}

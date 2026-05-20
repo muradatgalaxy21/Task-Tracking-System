@@ -8,6 +8,7 @@ import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { getMultiplier } from "@/lib/calculations";
 import { getDeadlineInfo } from "@/lib/deadline-utils";
 import ActivityFeed from "@/components/tasks/ActivityFeed";
+import UserAvatar from "@/components/common/UserAvatar";
 import {
   X,
   Edit3,
@@ -394,9 +395,6 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
   const canEdit = canEditMetadata;
 
   const assignee = members.find((m) => m.id === task.assignee_id);
-  const initials = assignee?.full_name
-    ? assignee.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-    : "?";
 
   const deadline = getDeadlineInfo(task.max_deadline);
   const isOverdue = deadline.isOverdue && task.status !== "Completed" && task.status !== "Discarded";
@@ -607,9 +605,12 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
                   Assignee
                 </span>
                 <div className="flex items-center gap-1.5">
-                  <div className="w-5 h-5 rounded bg-warm-400/15 flex items-center justify-center shrink-0">
-                    <span className="text-[8px] font-bold text-warm-400">{initials}</span>
-                  </div>
+                  <UserAvatar
+                    fullName={assignee?.full_name}
+                    image={assignee?.image}
+                    size={20}
+                    className="rounded"
+                  />
                   <span className="text-xs text-neutral-700">
                     {assignee?.full_name || "Unassigned"}
                   </span>

@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { TaskLedger, Profile } from "@/lib/types";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import UserAvatar from "@/components/common/UserAvatar";
 import { getMultiplier } from "@/lib/calculations";
 import { getDeadlineInfo } from "@/lib/deadline-utils";
 import {
@@ -85,9 +86,7 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
     }
   };
 
-  const initials = assignee?.full_name
-    ? assignee.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-    : "?";
+
 
   return (
     <div
@@ -152,9 +151,12 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
       {/* Assignee + priority */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded bg-warm-400/15 flex items-center justify-center">
-            <span className="text-[9px] font-bold text-warm-400">{initials}</span>
-          </div>
+          <UserAvatar
+            fullName={assignee?.full_name}
+            image={assignee?.image}
+            size={20}
+            className="rounded"
+          />
           <span className="text-xs text-neutral-500 truncate max-w-[90px]">
             {assignee?.full_name || "Unassigned"}
           </span>

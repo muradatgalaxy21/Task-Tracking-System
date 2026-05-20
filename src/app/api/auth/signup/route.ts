@@ -21,12 +21,37 @@ export async function POST(req: Request) {
       return new NextResponse("Email already exists", { status: 400 });
     }
 
-    // Validate the invite code before creating the user to avoid partial state
+    // Validate the invite code before creating the user to avoid partial state.
+    // Check the Invitation table first (new codes), then fall back to the legacy
+    // Workspace.invite_code field (static UUID codes from onboarding).
     let targetWorkspace = null;
+    let targetInvitation = null;
     if (inviteCode) {
-      targetWorkspace = await prisma.workspace.findUnique({
-        where: { invite_code: inviteCode.trim() },
+      const normalizedCode = inviteCode.trim().toUpperCase();
+
+      // New Invitation table lookup
+      const invitation = await prisma.invitation.findUnique({
+        where: { code: normalizedCode },
       });
+
+      if (invitation) {
+        if (invitation.status === "USED" || invitation.status === "EXPIRED") {
+          return new NextResponse("This invitation code is no longer valid.", { status: 400 });
+        }
+        if (invitation.expires_at && invitation.expires_at < new Date()) {
+          return new NextResponse("This invitation has expired.", { status: 400 });
+        }
+        targetWorkspace = await prisma.workspace.findUnique({
+          where: { id: invitation.workspace_id },
+        });
+        targetInvitation = invitation;
+      } else {
+        // Legacy static code fallback (also try original casing for UUID codes)
+        targetWorkspace =
+          (await prisma.workspace.findUnique({ where: { invite_code: normalizedCode } })) ??
+          (await prisma.workspace.findFirst({ where: { invite_code: inviteCode.trim() } }));
+      }
+
       if (!targetWorkspace) {
         return new NextResponse("Invalid invite code", { status: 400 });
       }
@@ -52,15 +77,34 @@ export async function POST(req: Request) {
       });
     }
 
-    // Joining an existing workspace: user enters as a Member
+    // Joining an existing workspace: user enters as a Member.
+    // For ACTIVE invitations, mark the code as USED atomically.
+    // For PENDING_APPROVAL invitations, record the claimer instead.
     if (targetWorkspace) {
-      await prisma.workspaceMember.create({
-        data: {
-          workspace_id: targetWorkspace.id,
-          user_id: user.id,
-          role: "Member",
-        },
-      });
+      if (targetInvitation) {
+        if (targetInvitation.status === "ACTIVE") {
+          await prisma.$transaction([
+            prisma.workspaceMember.create({
+              data: { workspace_id: targetWorkspace.id, user_id: user.id, role: "Member" },
+            }),
+            prisma.invitation.update({
+              where: { id: targetInvitation.id },
+              data: { status: "USED" },
+            }),
+          ]);
+        } else {
+          // PENDING_APPROVAL: record the claimer so an admin can approve
+          await prisma.invitation.update({
+            where: { id: targetInvitation.id },
+            data: { claimer_id: user.id, claimer_email: user.email, claimed_at: new Date() },
+          });
+        }
+      } else {
+        // Legacy static workspace code — join immediately
+        await prisma.workspaceMember.create({
+          data: { workspace_id: targetWorkspace.id, user_id: user.id, role: "Member" },
+        });
+      }
     }
 
     // Log the signup event — workspace_id is null since the user has no workspace yet

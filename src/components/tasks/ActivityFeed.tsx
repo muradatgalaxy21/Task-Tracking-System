@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { TaskActivity, Profile } from "@/lib/types";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { Send } from "lucide-react";
+import UserAvatar from "@/components/common/UserAvatar";
 
 interface ActivityFeedProps {
   taskId: string;
@@ -184,11 +185,12 @@ export default function ActivityFeed({ taskId, members }: ActivityFeedProps) {
               ) : (
                 // Threaded comment entry
                 <div className="flex items-start gap-2.5">
-                  <div className="w-6 h-6 rounded-md bg-warm-400/15 flex items-center justify-center shrink-0 mt-0.5">
-                    <span className="text-[9px] font-bold text-warm-400">
-                      {getInitials(activity.actor_name)}
-                    </span>
-                  </div>
+                  <UserAvatar
+                    fullName={activity.actor_name}
+                    image={members.find((m) => m.id === activity.user_id)?.image}
+                    size={24}
+                    className="rounded-md shrink-0 mt-0.5"
+                  />
                   <div className="flex-1 min-w-0 bg-neutral-50 rounded-lg px-3 py-2 border border-neutral-100">
                     <div className="flex items-baseline gap-2 mb-0.5">
                       <span className="text-xs font-medium text-neutral-700">
@@ -212,53 +214,61 @@ export default function ActivityFeed({ taskId, members }: ActivityFeedProps) {
 
       {/* Comment composer */}
       <div className="flex items-start gap-2.5">
-        <div className="w-6 h-6 rounded-md bg-warm-400/15 flex items-center justify-center shrink-0 mt-0.5">
-          <span className="text-[9px] font-bold text-warm-400">{currentUserInitials}</span>
-        </div>
-        <div className="flex-1 relative">
-          {/* @mention dropdown */}
-          {mentionQuery !== null && filteredMembers.length > 0 && (
-            <div className="absolute bottom-full mb-1 left-0 bg-white border border-neutral-200 rounded-lg shadow-lg z-10 overflow-hidden min-w-[180px]">
-              {filteredMembers.map((m) => (
-                <button
-                  key={m.id}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    insertMention(m.full_name, m.email);
-                  }}
-                  className="w-full text-left px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50 flex items-center gap-2"
-                >
-                  <div className="w-5 h-5 rounded bg-warm-400/15 flex items-center justify-center shrink-0">
-                    <span className="text-[8px] font-bold text-warm-400">
-                      {getInitials(m.full_name)}
-                    </span>
-                  </div>
-                  {m.full_name || m.email}
-                </button>
-              ))}
-            </div>
-          )}
+        <UserAvatar
+          fullName={currentUserName}
+          image={profile?.image || user?.image}
+          size={24}
+          className="rounded-md shrink-0 mt-0.5"
+        />
+        <div className="flex-1 space-y-2">
+          <div className="relative">
+            {/* @mention dropdown */}
+            {mentionQuery !== null && filteredMembers.length > 0 && (
+              <div className="absolute bottom-full mb-1 left-0 bg-white border border-neutral-200 rounded-lg shadow-lg z-10 overflow-hidden min-w-[180px]">
+                {filteredMembers.map((m) => (
+                  <button
+                    key={m.id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertMention(m.full_name, m.email);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50 flex items-center gap-2"
+                  >
+                    <UserAvatar
+                      fullName={m.full_name}
+                      image={m.image}
+                      size={20}
+                      className="rounded shrink-0"
+                    />
+                    {m.full_name || m.email}
+                  </button>
+                ))}
+              </div>
+            )}
 
-          <textarea
-            ref={textareaRef}
-            value={commentText}
-            onChange={handleCommentChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Add a comment... (type @ to mention)"
-            className="glass-input text-xs resize-none min-h-[60px] pr-10"
-            rows={2}
-          />
-          <button
-            onClick={submitComment}
-            disabled={!commentText.trim() || submitting}
-            title="Send (Ctrl+Enter)"
-            className="absolute bottom-2 right-2 p-1.5 rounded text-neutral-400 hover:text-warm-400 hover:bg-warm-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <Send size={13} />
-          </button>
+            <textarea
+              ref={textareaRef}
+              value={commentText}
+              onChange={handleCommentChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Add a comment... (type @ to mention)"
+              className="glass-input text-xs resize-none min-h-[60px]"
+              rows={2}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-neutral-400">Ctrl+Enter to submit</span>
+            <button
+              onClick={submitComment}
+              disabled={!commentText.trim() || submitting}
+              title="Send (Ctrl+Enter)"
+              className="p-2 rounded text-neutral-400 hover:text-warm-400 hover:bg-neutral-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <Send size={16} />
+            </button>
+          </div>
         </div>
       </div>
-      <p className="text-[10px] text-neutral-400 ml-8">Ctrl+Enter to submit</p>
     </div>
   );
 }

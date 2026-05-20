@@ -135,25 +135,30 @@ async function processMentions({
     },
   });
 
-  for (const { user } of workspaceMembers) {
-    const firstName = user.full_name?.split(" ")[0]?.toLowerCase() ?? "";
-    if (!mentionedNames.has(firstName)) continue;
-    // Do not notify the person who wrote the comment
-    if (user.id === actorId) continue;
-
-    // Create an in-app notification record
-    await prisma.notification.create({
-      data: {
-        user_id: user.id,
-        task_id: taskId,
-        task_title: task.title,
-        from_name: actorName,
-        type: "mention",
-        message: `${actorName} mentioned you in "${task.title}"`,
-      },
+  // Resolve which workspace members are actually mentioned and not the author
+  const mentioned = workspaceMembers
+    .map(({ user }) => user)
+    .filter((user) => {
+      const firstName = user.full_name?.split(" ")[0]?.toLowerCase() ?? "";
+      return mentionedNames.has(firstName) && user.id !== actorId;
     });
 
-    // Send an email notification if the user has an email address
+  if (mentioned.length === 0) return;
+
+  // Write all notification rows in a single round-trip rather than one per mention
+  await prisma.notification.createMany({
+    data: mentioned.map((user) => ({
+      user_id: user.id,
+      task_id: taskId,
+      task_title: task.title,
+      from_name: actorName,
+      type: "mention",
+      message: `${actorName} mentioned you in "${task.title}"`,
+    })),
+  });
+
+  // Emails are sent individually — no batch send API available
+  for (const user of mentioned) {
     if (user.email) {
       await sendMentionEmail({
         toEmail: user.email,

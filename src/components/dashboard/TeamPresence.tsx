@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { Profile, TaskLedger } from "@/lib/types";
+import UserAvatar from "@/components/common/UserAvatar";
 
 // The four founding partners of AI & Beyond in display order
 const PARTNER_NAMES = ["Murad", "Abdullah", "Mujtaba", "Abdul Ahad"];
@@ -26,20 +27,17 @@ interface PartnerCardProps {
 
 function PartnerCard({ profile, activeTasks, colorIndex }: PartnerCardProps) {
   const color = AVATAR_COLORS[colorIndex % AVATAR_COLORS.length];
-  const initials = profile.full_name
-    ? profile.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-    : profile.email?.slice(0, 2).toUpperCase() || "?";
-
   const firstName = profile.full_name?.split(" ")[0] || profile.email?.split("@")[0] || "Partner";
 
   return (
     <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-neutral-100 bg-white hover:border-neutral-200 hover:shadow-sm transition-all">
       {/* Avatar */}
-      <div
-        className={`w-8 h-8 rounded-lg ${color.bg} flex items-center justify-center shrink-0`}
-      >
-        <span className={`text-[10px] font-bold ${color.text}`}>{initials}</span>
-      </div>
+      <UserAvatar
+        fullName={profile.full_name}
+        image={profile.image}
+        size={32}
+        className="rounded-lg"
+      />
 
       {/* Info */}
       <div className="min-w-0">

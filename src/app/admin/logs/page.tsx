@@ -126,7 +126,10 @@ export default function AdminLogsPage() {
 
   const [filterWorkspace, setFilterWorkspace] = useState<string>("all");
   const [filterEvent, setFilterEvent]         = useState<string>("all");
-  const [page, setPage]                       = useState(0);
+  // Cursor stack for back navigation: each entry is the cursor used to fetch that page.
+  // cursorStack[0] = undefined (first page), cursorStack[1] = cursor for page 2, etc.
+  const [cursorStack, setCursorStack]         = useState<(string | undefined)[]>([undefined]);
+  const [nextCursor, setNextCursor]           = useState<string | null>(null);
 
   // Build grouped view: workspace_id → entries (null = auth events)
   const grouped = (() => {
@@ -152,13 +155,14 @@ export default function AdminLogsPage() {
     return map;
   })();
 
+  // currentCursor is the cursor for the page currently being shown (undefined = first page)
+  const currentCursor = cursorStack[cursorStack.length - 1];
+
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        limit: String(PAGE_SIZE),
-        offset: String(page * PAGE_SIZE),
-      });
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+      if (currentCursor)              params.set("cursor", currentCursor);
       if (filterWorkspace !== "all") params.set("workspace_id", filterWorkspace);
       if (filterEvent !== "all")     params.set("event_type", filterEvent);
 
@@ -167,10 +171,11 @@ export default function AdminLogsPage() {
       const data = await res.json();
       setLogs(data.logs);
       setTotal(data.total);
+      setNextCursor(data.nextCursor ?? null);
     } finally {
       setLoading(false);
     }
-  }, [filterWorkspace, filterEvent, page]);
+  }, [filterWorkspace, filterEvent, currentCursor]);
 
   // Fetch workspace list once for filter dropdown
   useEffect(() => {
@@ -186,14 +191,18 @@ export default function AdminLogsPage() {
     fetchLogs();
   }, [fetchLogs]);
 
-  // Reset to page 0 when filters change
+  // Reset cursor to first page when filters change
   const setFilter = (type: "workspace" | "event", value: string) => {
-    setPage(0);
+    setCursorStack([undefined]);
+    setNextCursor(null);
     if (type === "workspace") setFilterWorkspace(value);
     else setFilterEvent(value);
   };
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const currentPage  = cursorStack.length - 1;
+  const totalPages   = Math.ceil(total / PAGE_SIZE);
+  const hasPrev      = currentPage > 0;
+  const hasNext      = nextCursor !== null;
 
   return (
     <div className="space-y-6">
@@ -340,22 +349,24 @@ export default function AdminLogsPage() {
       )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {(hasPrev || hasNext) && (
         <div className="flex items-center justify-between pt-2 border-t border-white/5">
           <span className="text-[10px] text-white/30">
-            Page {page + 1} of {totalPages}
+            Page {currentPage + 1} of {totalPages || "?"}
           </span>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
+              onClick={() => setCursorStack((s) => s.slice(0, -1))}
+              disabled={!hasPrev}
               className="p-1.5 rounded text-white/40 hover:text-white/70 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={14} />
             </button>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
+              onClick={() => {
+                if (nextCursor) setCursorStack((s) => [...s, nextCursor]);
+              }}
+              disabled={!hasNext}
               className="p-1.5 rounded text-white/40 hover:text-white/70 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight size={14} />

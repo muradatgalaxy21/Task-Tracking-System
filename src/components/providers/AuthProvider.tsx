@@ -21,6 +21,7 @@ export interface NextAuthUser {
   email?: string | null;
   full_name?: string | null;
   role: string;
+  image?: string | null;
 }
 
 interface AuthContextType {
@@ -104,6 +105,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
             email: user.email,
             full_name: data.full_name,
             role: data.role || "Member",
+            image: data.image || null,
           };
           setProfile(updated);
 

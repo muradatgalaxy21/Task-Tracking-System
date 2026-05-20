@@ -10,6 +10,7 @@ import { getMultiplier } from "@/lib/calculations";
 import { getDeadlineInfo } from "@/lib/deadline-utils";
 import { useState } from "react";
 import { Trash2, AlertTriangle, Zap, Clock } from "lucide-react";
+import UserAvatar from "@/components/common/UserAvatar";
 
 interface TaskTableRowProps {
   task: TaskLedger;
@@ -81,9 +82,7 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
     }
   };
 
-  const initials = assignee?.full_name
-    ? assignee.full_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
-    : "?";
+
 
   // Selected state reuses the same deep-dark treatment as hover so the open
   // panel always has a clear visual anchor on the row that triggered it.
@@ -128,9 +127,12 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
       {/* Assignee */}
       <td className="px-3 py-2.5">
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-md bg-warm-400/15 flex items-center justify-center shrink-0">
-            <span className="text-[8px] font-bold text-warm-400">{initials}</span>
-          </div>
+          <UserAvatar
+            fullName={assignee?.full_name}
+            image={assignee?.image}
+            size={20}
+            className="rounded"
+          />
           <span className="text-xs text-neutral-600 truncate max-w-[100px]">
             {assignee?.full_name || "Unassigned"}
           </span>

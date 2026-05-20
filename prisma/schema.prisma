@@ -66,6 +66,7 @@ model User {
   attendance           DailyAttendance[]
   notifications        Notification[]
   invitations_created  Invitation[]      @relation("InvitationsCreated")
+  chat_messages        ChatMessage[]
 }
 
 model Workspace {
@@ -83,6 +84,7 @@ model Workspace {
   pages       Page[]
   tasks       TaskLedger[]
   invitations Invitation[]
+  chat_messages ChatMessage[]
 }
 
 model WorkspaceMember {
@@ -252,4 +254,16 @@ model ProfileVerificationToken {
   payload    String
   expires_at DateTime
   created_at DateTime @default(now())
+}
+
+model ChatMessage {
+  id           String   @id @default(uuid())
+  workspace_id String
+  user_id      String
+  content      String
+  attachments  String   @default("[]") // JSON string of [{ name: string, url: string, type: string }]
+  created_at   DateTime @default(now())
+
+  workspace    Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }

@@ -142,7 +142,7 @@ export default function AttendancePage() {
     <div className="space-y-6 animate-fade-in max-w-3xl">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-neutral-800">Daily Attendance</h1>
+        <h1 className="text-xl sm:text-2xl font-semibold text-neutral-800">Daily Attendance</h1>
         <p className="text-sm text-neutral-400 mt-1">
           Mark attendance for each team member by date
         </p>
@@ -207,28 +207,28 @@ export default function AttendancePage() {
               return (
                 <div
                   key={member.id}
-                  className="flex items-center gap-4 px-5 py-4 hover:bg-neutral-50/60 transition-colors"
+                  className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 sm:px-5 py-4 hover:bg-neutral-50/60 transition-colors"
                 >
-                  {/* Avatar */}
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-bold text-white"
-                    style={{ background: "#e06b6b" }}
-                  >
-                    {initials}
+                  {/* Avatar + Name row — always horizontal */}
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-bold text-white"
+                      style={{ background: "#e06b6b" }}
+                    >
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-neutral-800 truncate">
+                        {member.full_name || member.email?.split('@')[0] || "Unknown"}
+                      </p>
+                      <p className="text-[10px] text-neutral-400 truncate">
+                        {member.email}
+                      </p>
+                    </div>
                   </div>
 
-                  {/* Name */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-neutral-800 truncate">
-                      {member.full_name || member.email?.split('@')[0] || "Unknown"}
-                    </p>
-                    <p className="text-[10px] text-neutral-400 truncate">
-                      {member.email}
-                    </p>
-                  </div>
-
-                  {/* Radio buttons */}
-                  <div className="flex items-center gap-3">
+                  {/* Radio buttons — indented on mobile to align under the name */}
+                  <div className="flex items-center gap-3 pl-11 sm:pl-0">
                     {STATUS_OPTIONS.map((opt) => (
                       <label
                         key={opt.value}

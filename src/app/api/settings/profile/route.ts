@@ -37,27 +37,40 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const { full_name } = await req.json();
+    const { full_name, image } = await req.json();
 
-    if (!full_name?.trim()) {
-      return NextResponse.json({ error: "Name cannot be empty" }, { status: 400 });
+    // 1. Update image immediately if provided (bypasses email verification)
+    if (image !== undefined) {
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { image: image ? image.trim() : null },
+      });
     }
 
+    // Fetch user to check current role and compare name
     const dbUser = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { role: true, email: true, full_name: true },
+      select: { role: true, email: true, full_name: true, image: true },
     });
 
     if (!dbUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Admin and Owner accounts must verify the change via email before it is applied
+    // If no name is provided, or the name hasn't changed, return success immediately
+    if (full_name === undefined || full_name.trim() === (dbUser.full_name ?? "")) {
+      return NextResponse.json({ success: true, user: dbUser });
+    }
+
+    if (!full_name.trim()) {
+      return NextResponse.json({ error: "Name cannot be empty" }, { status: 400 });
+    }
+
+    // Admin and Owner accounts must verify the name change via email
     if (hasMinimumRole(dbUser.role, "Admin")) {
       const token = randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
 
-      // Replace any existing pending token for this user
       await prisma.profileVerificationToken.deleteMany({
         where: { user_id: session.user.id },
       });
@@ -80,14 +93,14 @@ export async function PATCH(req: Request) {
         verifyUrl,
       });
 
-      return NextResponse.json({ needsVerification: true });
+      return NextResponse.json({ needsVerification: true, user: dbUser });
     }
 
     // Member/Guest: apply directly
     const updated = await prisma.user.update({
       where: { id: session.user.id },
       data: { full_name: full_name.trim() },
-      select: { id: true, full_name: true, email: true, role: true },
+      select: { id: true, full_name: true, email: true, role: true, image: true },
     });
 
     return NextResponse.json({ success: true, user: updated });

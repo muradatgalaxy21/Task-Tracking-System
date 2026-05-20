@@ -22,6 +22,7 @@ export interface Profile {
   email: string;
   full_name: string;
   role: UserRole;
+  image?: string | null;
   // sessions_attended removed - attendance is now tracked via daily_attendance table.
   created_at: string;
 }

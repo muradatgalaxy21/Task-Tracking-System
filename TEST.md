@@ -8,25 +8,25 @@
 ## Phase 1 — Authentication & Onboarding
 
 ### 1.1 Login Flow
-- [ ] **T-001** Open `/login` — split-screen layout loads correctly, no console errors
-- [ ] **T-002** Enter a **new email** → page shows onboarding choice (Create Workspace / Join Team)
-- [ ] **T-003** Enter your **existing email** → page skips onboarding, goes straight to password
-- [ ] **T-004** Login with correct credentials → redirected to `/dashboard`
-- [ ] **T-005** Login with wrong password → error message shown, no crash
-- [ ] **T-006** Leave email blank → submit → validation error shown
-- [ ] **T-007** Logout → redirected to `/login`, cannot access `/dashboard` via back button
+- [x] **T-001** Open `/login` — split-screen layout loads correctly, no console errors
+- [x] **T-002** Enter a **new email** → page shows onboarding choice (Create Workspace / Join Team)
+- [x] **T-003** Enter your **existing email** → page skips onboarding, goes straight to password
+- [x] **T-004** Login with correct credentials → redirected to `/dashboard`
+- [x] **T-005** Login with wrong password → error message shown, no crash
+- [x] **T-006** Leave email blank → submit → validation error shown
+- [x] **T-007** Logout → redirected to `/login`, cannot access `/dashboard` via back button
 
 ### 1.2 Magic Link (Email Login)
-- [ ] **T-008** Click "Magic Link" / passwordless option → email sent confirmation shown
-- [ ] **T-009** Open magic link from email → lands on dashboard authenticated
+- [x] **T-008** Click "Magic Link" / passwordless option → email sent confirmation shown
+- [x] **T-009** Open magic link from email → lands on dashboard authenticated
 
 ### 1.3 OAuth (if configured)
 - [ ] **T-010** Google OAuth button visible only when `GOOGLE_CLIENT_ID` is set
 - [ ] **T-011** GitHub OAuth button visible only when `GITHUB_ID` is set
 
 ### 1.4 Password Reset
-- [ ] **T-012** Go to `/auth/forgot-password` → enter email → success message
-- [ ] **T-013** Open reset link from email → `/auth/reset-password` → set new password → login works
+- [x] **T-012** Go to `/auth/forgot-password` → enter email → success message
+- [x] **T-013** Open reset link from email → `/auth/reset-password` → set new password → login works
 
 ### 1.5 Signup / New User Onboarding
 - [ ] **T-014** New user chooses "Create Workspace" → workspace created, user gets `Owner` role

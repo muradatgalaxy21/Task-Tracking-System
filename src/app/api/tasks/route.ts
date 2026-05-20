@@ -45,7 +45,8 @@ export async function GET(req: Request) {
       },
       include: {
         assignee: { select: { id: true, full_name: true, email: true } },
-        sub_tasks: true,
+        // Only the three fields consumed by TaskCard, TaskTableRow, and TaskDetailPanel
+        sub_tasks: { select: { id: true, title: true, status: true } },
       },
       orderBy: { created_at: "desc" },
     });
@@ -278,26 +279,26 @@ export async function PATCH(req: Request) {
       }
     }
 
-    const updatedTask = await prisma.taskLedger.update({
-      where: { task_id },
-      data: {
-        ...(title !== undefined ? { title } : {}),
-        ...(status !== undefined ? { status } : {}),
-        ...(multiplier_earned !== undefined ? { multiplier_earned } : {}),
-        ...(status === "Completed" ? { completed_at: new Date() } : {}),
-        ...setReviewSubmittedAt,
-        ...revertResetData,
-        ...(description !== undefined ? { description } : {}),
-        ...(ai_model_used !== undefined ? { ai_model_used: ai_model_used || null } : {}),
-        ...(benchmark_score !== undefined ? { benchmark_score: benchmark_score || null } : {}),
-        ...(repo_link !== undefined ? { repo_link: repo_link || null } : {}),
-        ...(technical_requirements !== undefined ? { technical_requirements } : {}),
-        ...(architecture_notes !== undefined ? { architecture_notes } : {}),
-        ...(estimated_hours !== undefined ? { estimated_hours: estimated_hours !== null ? Number(estimated_hours) : null } : {}),
-        ...(actual_hours !== undefined ? { actual_hours: actual_hours !== null ? Number(actual_hours) : null } : {}),
-        ...(attachments !== undefined ? { attachments } : {}),
-      },
-    });
+    // Build the shared data object for the task update
+    const taskUpdateData = {
+      ...(title !== undefined ? { title } : {}),
+      ...(status !== undefined ? { status } : {}),
+      ...(multiplier_earned !== undefined ? { multiplier_earned } : {}),
+      ...(status === "Completed" ? { completed_at: new Date() } : {}),
+      ...setReviewSubmittedAt,
+      ...revertResetData,
+      ...(description !== undefined ? { description } : {}),
+      ...(ai_model_used !== undefined ? { ai_model_used: ai_model_used || null } : {}),
+      ...(benchmark_score !== undefined ? { benchmark_score: benchmark_score || null } : {}),
+      ...(repo_link !== undefined ? { repo_link: repo_link || null } : {}),
+      ...(technical_requirements !== undefined ? { technical_requirements } : {}),
+      ...(architecture_notes !== undefined ? { architecture_notes } : {}),
+      ...(estimated_hours !== undefined ? { estimated_hours: estimated_hours !== null ? Number(estimated_hours) : null } : {}),
+      ...(actual_hours !== undefined ? { actual_hours: actual_hours !== null ? Number(actual_hours) : null } : {}),
+      ...(attachments !== undefined ? { attachments } : {}),
+    };
+
+    let updatedTask: Awaited<ReturnType<typeof prisma.taskLedger.update>>;
 
     // Auto-log status transitions to the activity feed
     if (status !== undefined && currentTask.status !== status) {
@@ -309,16 +310,20 @@ export async function PATCH(req: Request) {
       const fromLabel  = STATUS_LABELS[currentTask.status] ?? currentTask.status;
       const toLabel    = STATUS_LABELS[status] ?? status;
 
-      await prisma.taskActivity.create({
-        data: {
-          task_id,
-          user_id: session.user.id,
-          actor_name,
-          type: "status_change",
-          content: `moved this task from "${fromLabel}" to "${toLabel}"`,
-          metadata: JSON.stringify({ old_status: currentTask.status, new_status: status }),
-        },
-      });
+      // Atomic: task update + activity entry in one round-trip; neither persists without the other
+      [updatedTask] = await prisma.$transaction([
+        prisma.taskLedger.update({ where: { task_id }, data: taskUpdateData }),
+        prisma.taskActivity.create({
+          data: {
+            task_id,
+            user_id: session.user.id,
+            actor_name,
+            type: "status_change",
+            content: `moved this task from "${fromLabel}" to "${toLabel}"`,
+            metadata: JSON.stringify({ old_status: currentTask.status, new_status: status }),
+          },
+        }),
+      ]);
 
       // Audit log for status change
       writeAuditLog({
@@ -331,6 +336,9 @@ export async function PATCH(req: Request) {
         entity_name: updatedTask.title,
         metadata: { from: currentTask.status, to: status, from_label: fromLabel, to_label: toLabel },
       });
+    } else {
+      // No status change — plain update with no associated activity entry needed
+      updatedTask = await prisma.taskLedger.update({ where: { task_id }, data: taskUpdateData });
     }
 
     // Audit log for title edit — compare against old title captured before the update
