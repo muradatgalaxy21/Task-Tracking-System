@@ -44,6 +44,7 @@ src/app/
   dashboard/                # authenticated shell (AuthProvider + WorkspaceProvider + Sidebar)
     page.tsx                # stats overview
     attendance/             # daily attendance sheet
+    chat/                   # workspace chat with file attachments
     ledger/                 # task ledger view
     payout/                 # payout calculator
     member/[id]/            # individual member profile
@@ -53,11 +54,14 @@ src/app/
   api/
     attendance/             # GET (any auth) / POST (Admin+)
     admin/attendance/       # GET (Owner only) — all logs with workspace info
+    admin/logs/             # GET (Owner only) — audit log viewer
     admin/users/            # GET / PATCH (Owner only)
     admin/workspaces/       # GET (Owner only)
+    chat/                   # GET / POST — workspace-scoped chat messages
     invitations/            # invite code CRUD
     members/                # user lookup + workspace-scoped member list
     tasks/                  # task CRUD
+    upload/                 # POST — file upload, stores to public/uploads/
     workspaces/             # workspace CRUD + join
     notifications/          # in-app notifications
     settings/profile/       # profile update with email-link verification
@@ -109,6 +113,19 @@ SQLite via Prisma with the libsql adapter. The composite unique key `@@unique([u
 ### Invitation Flow
 
 Two tiers: Admin/Owner-generated invites are `ACTIVE` (instant join). Member-generated invites start `PENDING_APPROVAL` — a claimer is recorded when someone uses the code, and an Admin must approve before the user joins the workspace.
+
+Invite codes are looked up in the `Invitation` table first (new codes, stored uppercase), then fall back to the legacy `Workspace.invite_code` field (static UUID from onboarding). This lookup order applies in both `/api/auth/signup` and `/api/workspaces/join` — always keep them in sync.
+
+### Chat
+
+`GET /api/chat?workspaceId=X` — paginated messages, optional `?since=<ISO>` for polling.  
+`POST /api/chat` — send a message; `attachments` is a JSON array of `{ name, url, type }` objects uploaded via `/api/upload` beforehand.  
+File uploads land in `public/uploads/` and are served as static assets. The `Upload` route accepts `multipart/form-data` with a single `file` field and returns `{ url, name, type, size }`.
+
+### Shared Components
+
+- `src/components/common/UserAvatar.tsx` — renders a user avatar from `image_url` or falls back to initials; accepts `size` and `className` props.
+- `src/components/layout/NotificationsBell.tsx` — polls `/api/notifications` and shows an unread badge; marks all read on dropdown open.
 
 ## Code Conventions
 
