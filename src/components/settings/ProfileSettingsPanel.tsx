@@ -139,17 +139,29 @@ export default function ProfileSettingsPanel() {
       const formData = new FormData();
       formData.append("file", file);
 
+      // 1. Send the file payload to the local upload API route.
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
 
+      // 2. Read response body as text first to avoid stream locking or double-read errors.
+      const responseText = await uploadRes.text();
+
+      // 3. Handle non-ok status codes by reading custom error JSON or falling back to raw text.
       if (!uploadRes.ok) {
-        const uploadData = await uploadRes.json();
-        throw new Error(uploadData.error || "Upload failed");
+        let errMsg = "Upload failed";
+        try {
+          const uploadData = JSON.parse(responseText);
+          errMsg = uploadData.error || errMsg;
+        } catch {
+          errMsg = responseText || errMsg;
+        }
+        throw new Error(errMsg);
       }
 
-      const { url } = await uploadRes.json();
+      // 4. Parse the success response from the text we already retrieved.
+      const { url } = JSON.parse(responseText);
 
       const patchRes = await fetch("/api/settings/profile", {
         method: "PATCH",

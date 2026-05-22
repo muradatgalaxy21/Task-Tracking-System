@@ -155,17 +155,29 @@ export default function ChatPage() {
       const formData = new FormData();
       formData.append("file", file);
 
+      // 1. Post the multipart form file data to the local upload API route.
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
 
+      // 2. Fetch the response body as text once to avoid stream consumption issues.
+      const responseText = await res.text();
+
+      // 3. Process error responses using parsed JSON error field or the raw text payload.
       if (!res.ok) {
-        const uploadData = await res.json();
-        throw new Error(uploadData.error || "File upload failed");
+        let errMsg = "File upload failed";
+        try {
+          const uploadData = JSON.parse(responseText);
+          errMsg = uploadData.error || errMsg;
+        } catch {
+          errMsg = responseText || errMsg;
+        }
+        throw new Error(errMsg);
       }
 
-      const data = await res.json();
+      // 4. Parse the successful upload metadata from the response text.
+      const data = JSON.parse(responseText);
       setAttachedFiles((prev) => [
         ...prev,
         {
