@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import type { Profile, TaskPriority } from "@/lib/types";
-import { X, Plus, Loader2, ChevronDown, ChevronUp, Cpu } from "lucide-react";
+import { X, Plus, Loader2, ChevronDown, ChevronUp, Cpu, RotateCw } from "lucide-react";
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -37,6 +37,11 @@ export default function CreateTaskModal({
   const [benchmarkScore, setBenchmarkScore] = useState("");
   const [repoLink, setRepoLink]             = useState("");
 
+  // Recurrence configuration fields
+  const [repeatEnabled, setRepeatEnabled]   = useState(false);
+  const [repeatInterval, setRepeatInterval] = useState(24);
+  const [repeatCount, setRepeatCount]       = useState(5);
+
   const selectedMember = members.find((m) => m.id === assigneeId);
 
   if (!isOpen) return null;
@@ -51,6 +56,9 @@ export default function CreateTaskModal({
     setBenchmarkScore("");
     setRepoLink("");
     setShowTechnical(false);
+    setRepeatEnabled(false);
+    setRepeatInterval(24);
+    setRepeatCount(5);
     setError("");
   };
 
@@ -70,6 +78,8 @@ export default function CreateTaskModal({
     try {
       setLoading(true);
 
+      // 1. Sends task details including optional recurrence (interval, count) to the creation API.
+      // 2. Body parameters for repeat_enabled, repeat_interval, and repeat_count are passed if repeat is toggled.
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -83,6 +93,9 @@ export default function CreateTaskModal({
           ai_model_used: aiModelUsed.trim() || null,
           benchmark_score: benchmarkScore.trim() || null,
           repo_link: repoLink.trim() || null,
+          repeat_enabled: repeatEnabled,
+          repeat_interval: repeatEnabled ? Number(repeatInterval) : undefined,
+          repeat_count: repeatEnabled ? Number(repeatCount) : undefined,
         }),
       });
 
@@ -238,6 +251,59 @@ export default function CreateTaskModal({
               className="glass-input"
               required
             />
+          </div>
+
+          {/* Recurrence Settings */}
+          <div className="border border-neutral-100 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2.5 bg-neutral-50/50">
+              <label htmlFor="repeat-toggle" className="flex items-center gap-2 text-xs font-medium text-neutral-500 cursor-pointer">
+                <RotateCw size={13} className="text-purple-500" />
+                Repeat Task
+              </label>
+              <input
+                id="repeat-toggle"
+                type="checkbox"
+                checked={repeatEnabled}
+                onChange={(e) => setRepeatEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-neutral-300 text-purple-600 focus:ring-purple-500/20 cursor-pointer"
+              />
+            </div>
+
+            {repeatEnabled && (
+              <div className="p-3 border-t border-neutral-100 bg-white space-y-3.5 animate-fade-in">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider mb-1">
+                      Interval (Hours)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={repeatInterval}
+                      onChange={(e) => setRepeatInterval(Math.max(1, Number(e.target.value)))}
+                      className="glass-input text-sm py-1.5 h-9"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider mb-1">
+                      Repeat Count
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={repeatCount}
+                      onChange={(e) => setRepeatCount(Math.max(1, Number(e.target.value)))}
+                      className="glass-input text-sm py-1.5 h-9"
+                      required
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-neutral-400 leading-normal">
+                  Creates {repeatCount} tasks in total: the base task and {repeatCount - 1} repeated tasks scheduled every {repeatInterval} hours.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Technical metadata (collapsible) */}

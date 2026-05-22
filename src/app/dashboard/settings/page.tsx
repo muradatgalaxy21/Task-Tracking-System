@@ -56,6 +56,18 @@ function SettingsContent() {
         </div>
       )}
 
+      {/* Account deletion verification result banners */}
+      {searchParams.get("deleteVerify") === "expired" && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
+          The account deletion verification link has expired. Please request a new one from your profile settings.
+        </div>
+      )}
+      {(searchParams.get("deleteVerify") === "invalid" || searchParams.get("deleteVerify") === "error") && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          The account deletion verification link is invalid or an error occurred. Please try again.
+        </div>
+      )}
+
       {/* Tab bar */}
       <div className="border-b border-neutral-200">
         <nav className="flex gap-6">

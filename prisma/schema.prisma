@@ -267,3 +267,12 @@ model ChatMessage {
   workspace    Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
+
+model AccountDeletionToken {
+  id         String   @id @default(cuid())
+  user_id    String   @unique
+  token      String   @unique
+  payload    String   // JSON string of { transfers: Record<workspaceId, newOwnerUserId>, workspacesToDelete: string[] }
+  expires_at DateTime
+  created_at DateTime @default(now())
+}

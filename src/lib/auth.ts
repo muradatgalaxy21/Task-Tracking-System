@@ -15,9 +15,13 @@ export const authOptions: NextAuthOptions = {
       server: {
         host: process.env.SMTP_HOST,
         port: Number(process.env.SMTP_PORT),
+        secure: Number(process.env.SMTP_PORT) === 465,
         auth: {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,
+        },
+        tls: {
+          rejectUnauthorized: false,
         },
       },
       from: process.env.SMTP_USER,
@@ -113,19 +117,19 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (session.user) {
-        // @ts-ignore
+        // @ts-expect-error: NextAuth session user does not have custom ID field by default
         session.user.id = token.sub;
-        // @ts-ignore
         session.user.full_name = token.full_name;
 
         // Always fetch role fresh to prevent stale permission data in long-lived tokens
+        // 1. Fetch user role from database.
+        // 2. Assign role to user session for access control checks.
         const dbUser = await prisma.user.findUnique({
           where: { id: token.sub! },
           select: { role: true },
         });
 
         if (dbUser) {
-          // @ts-ignore
           session.user.role = dbUser.role;
         }
       }

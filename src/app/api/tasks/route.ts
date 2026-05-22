@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { TaskLedger } from "@prisma/client";
 import { hasMinimumRole } from "@/lib/rbac";
 import { resolveEffectiveRole } from "@/lib/rbac-utils";
 import { STATUS_LABELS } from "@/lib/types";
@@ -103,40 +104,92 @@ export async function POST(req: Request) {
       );
     }
 
-    const task = await prisma.taskLedger.create({
-      data: {
-        title,
-        description: description || "",
-        assignee_id,
-        workspace_id: workspace_id || null,
-        estimated_days: estimated_days || 1,
-        priority: priority || "Medium",
-        max_deadline: max_deadline
-          ? new Date(max_deadline)
-          : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        status: "Todo",
-        ai_model_used: ai_model_used || null,
-        benchmark_score: benchmark_score || null,
-        repo_link: repo_link || null,
-      },
-    });
+    // 1. Read recurrence settings (interval in hours, repeat count) from the request body.
+    const repeatEnabled = !!body.repeat_enabled;
+    const repeatInterval = body.repeat_interval ? Number(body.repeat_interval) : 24;
+    const repeatCount = body.repeat_count ? Number(body.repeat_count) : 5;
 
-    // Log task creation — fire-and-forget
+    // 2. Validate recurrence inputs to prevent invalid interval or count values.
+    if (repeatEnabled) {
+      if (isNaN(repeatInterval) || repeatInterval <= 0) {
+        return NextResponse.json({ error: "Invalid repeat interval" }, { status: 400 });
+      }
+      if (isNaN(repeatCount) || repeatCount < 1) {
+        return NextResponse.json({ error: "Invalid repeat count" }, { status: 400 });
+      }
+    }
+
     const creator = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { full_name: true, email: true },
     });
-    writeAuditLog({
-      workspace_id: workspace_id || null,
-      user_id: session.user.id,
-      actor_name: creator?.full_name || creator?.email || "Unknown",
-      actor_email: creator?.email,
-      event_type: "task_created",
-      entity_id: task.task_id,
-      entity_name: task.title,
-    });
+    const actorName = creator?.full_name || creator?.email || "Unknown";
 
-    return NextResponse.json(task);
+    const baseDeadline = max_deadline
+      ? new Date(max_deadline)
+      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // 3. Build the tasks list. For recurring tasks, increment deadlines and format titles as "Title X/Y" (e.g. "Review Design 1/5").
+    const tasksToCreate: { title: string; deadline: Date }[] = [];
+    if (repeatEnabled) {
+      for (let i = 0; i < repeatCount; i++) {
+        const taskDeadline = new Date(baseDeadline.getTime() + i * repeatInterval * 60 * 60 * 1000);
+        const taskTitle = `${title} ${i + 1}/${repeatCount}`;
+        tasksToCreate.push({
+          title: taskTitle,
+          deadline: taskDeadline,
+        });
+      }
+    } else {
+      tasksToCreate.push({
+        title,
+        deadline: baseDeadline,
+      });
+    }
+
+    // Track the first task created in the batch to return it in the response
+    let firstCreatedTask: TaskLedger | null = null;
+
+    // 4. Execute atomic database insertions for all tasks inside a transaction block.
+    // 1. Transaction isolates the creation of multiple tasks.
+    // 2. Timeout is set to 30000ms to prevent connection drops in slow network scenarios.
+    await prisma.$transaction(async (tx) => {
+      for (let i = 0; i < tasksToCreate.length; i++) {
+        const item = tasksToCreate[i];
+        const created = await tx.taskLedger.create({
+          data: {
+            title: item.title,
+            description: description || "",
+            assignee_id,
+            workspace_id: workspace_id || null,
+            estimated_days: estimated_days || 1,
+            priority: priority || "Medium",
+            max_deadline: item.deadline,
+            status: "Todo",
+            ai_model_used: ai_model_used || null,
+            benchmark_score: benchmark_score || null,
+            repo_link: repo_link || null,
+          },
+        });
+
+        if (i === 0) {
+          firstCreatedTask = created;
+        }
+
+        // 5. Dispatch task creation audit logs (fire-and-forget).
+        writeAuditLog({
+          workspace_id: workspace_id || null,
+          user_id: session.user.id,
+          actor_name: actorName,
+          actor_email: creator?.email,
+          event_type: "task_created",
+          entity_id: created.task_id,
+          entity_name: created.title,
+        });
+      }
+    }, { timeout: 30000 });
+
+    return NextResponse.json(firstCreatedTask);
   } catch (error) {
     console.error("Failed to create task:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
