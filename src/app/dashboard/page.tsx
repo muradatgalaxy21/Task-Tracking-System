@@ -4,14 +4,16 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import TaskListView from "@/components/tasks/TaskListView";
 import TeamPresence from "@/components/dashboard/TeamPresence";
 import type { Profile, TaskLedger, DailyAttendance } from "@/lib/types";
-import { calculateTPS, calculateAS, calculateTotalScore } from "@/lib/calculations";
+import { calculateTPS, calculateAS, calculateTotalScore, getActiveDaysInMonth } from "@/lib/calculations";
 import { Users, ClipboardCheck, TrendingUp, Award } from "lucide-react";
 
 export default function DashboardPage() {
   const { profile, user, isAdmin, loading: authLoading, refreshKey } = useAuth();
+  const { activeWorkspace } = useWorkspace();
   const [stats, setStats] = useState({
     totalMembers: 0,
     totalTasks: 0,
@@ -20,15 +22,17 @@ export default function DashboardPage() {
   });
 
   useEffect(() => {
-    // Do not fetch until auth (session + profile) has fully resolved
-    if (authLoading) return;
+    // Wait for auth and an active workspace before fetching
+    if (authLoading || !activeWorkspace?.id) return;
+
+    const workspaceId = activeWorkspace.id;
 
     const fetchStats = async () => {
       try {
         const [membersRes, tasksRes, attendanceRes] = await Promise.all([
-          fetch("/api/members"),
-          fetch("/api/tasks"),
-          fetch("/api/attendance"),
+          fetch(`/api/members?workspaceId=${workspaceId}`),
+          fetch(`/api/tasks?workspaceId=${workspaceId}`),
+          fetch(`/api/attendance?workspaceId=${workspaceId}`),
         ]);
 
         if (!membersRes.ok || !tasksRes.ok || !attendanceRes.ok) return;
@@ -46,6 +50,8 @@ export default function DashboardPage() {
         const now = new Date();
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth();
+        // Active days = unique dates where at least one workspace member was Present
+        const activeDays = getActiveDaysInMonth(typedAttendance, currentYear, currentMonth);
 
         const completedTasks = typedTasks.filter((t) => t.status === "Completed");
 
@@ -54,7 +60,7 @@ export default function DashboardPage() {
           const memberTasks = typedTasks.filter((t) => t.assignee_id === member.id);
           const memberAttendance = typedAttendance.filter((a) => a.user_id === member.id);
           const tps = calculateTPS(memberTasks, currentYear, currentMonth);
-          const as_score = calculateAS(memberAttendance, currentYear, currentMonth);
+          const as_score = calculateAS(memberAttendance, currentYear, currentMonth, activeDays);
           totalScoreSum += calculateTotalScore(tps.score, as_score);
         }
 
@@ -74,7 +80,7 @@ export default function DashboardPage() {
                 const myAttendance = typedAttendance.filter((a) => a.user_id === user?.id);
                 const myTasks = typedTasks.filter((t) => t.assignee_id === user?.id);
                 const myTPS = calculateTPS(myTasks, currentYear, currentMonth);
-                const myAS = calculateAS(myAttendance, currentYear, currentMonth);
+                const myAS = calculateAS(myAttendance, currentYear, currentMonth, activeDays);
                 return calculateTotalScore(myTPS.score, myAS);
               })(),
         });
@@ -84,7 +90,7 @@ export default function DashboardPage() {
     };
 
     fetchStats();
-  }, [authLoading, refreshKey, isAdmin, user?.id]);
+  }, [authLoading, refreshKey, isAdmin, user?.id, activeWorkspace?.id]);
 
   if (authLoading) {
     return (

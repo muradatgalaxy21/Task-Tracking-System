@@ -22,6 +22,8 @@ import {
   X,
   Settings,
   MessageSquare,
+  CalendarCheck,
+  History,
 } from "lucide-react";
 
 interface NavItem {
@@ -29,6 +31,7 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  ownerOnly?: boolean;
 }
 
 // Modal mode: "join" shows invite code input; "create" shows workspace creation form
@@ -150,13 +153,15 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
 
   const navItems: NavItem[] = [
-    { label: "Dashboard", href: "/dashboard",       icon: <LayoutDashboard size={17} /> },
-    { label: "Tasks",     href: "/dashboard/tasks", icon: <CheckSquare size={17} /> },
-    { label: "Chat",      href: "/dashboard/chat",  icon: <MessageSquare size={17} /> },
-    { label: "Projects",  href: "/dashboard/ledger",     icon: <FolderOpen size={17} /> },
-    { label: "Team",      href: "/dashboard/attendance", icon: <Users size={17} /> },
-    { label: "Reports",   href: "/dashboard/payout",     icon: <BarChart2 size={17} />, adminOnly: true },
-    { label: "Settings",  href: "/dashboard/settings",   icon: <Settings size={17} /> },
+    { label: "Dashboard", href: "/dashboard",              icon: <LayoutDashboard size={17} /> },
+    { label: "Tasks",     href: "/dashboard/tasks",        icon: <CheckSquare size={17} /> },
+    { label: "Chat",      href: "/dashboard/chat",         icon: <MessageSquare size={17} /> },
+    { label: "Projects",  href: "/dashboard/ledger",       icon: <FolderOpen size={17} /> },
+    { label: "Team",      href: "/dashboard/attendance",   icon: <Users size={17} /> },
+    { label: "Reports",   href: "/dashboard/payout",       icon: <BarChart2 size={17} />, adminOnly: true },
+    { label: "Month End", href: "/dashboard/month-end",    icon: <CalendarCheck size={17} />, ownerOnly: true },
+    { label: "My History",href: "/dashboard/history",      icon: <History size={17} /> },
+    { label: "Settings",  href: "/dashboard/settings",     icon: <Settings size={17} /> },
   ];
 
   return (
@@ -259,7 +264,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             {collapsed ? "" : "Navigation"}
           </p>
           {navItems
-            .filter((item) => !item.adminOnly || isAdmin)
+            .filter((item) => (!item.adminOnly || isAdmin) && (!item.ownerOnly || isOwner))
             .map((item) => {
               const isActive = pathname === item.href;
               return (

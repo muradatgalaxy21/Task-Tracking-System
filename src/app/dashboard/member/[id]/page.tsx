@@ -11,13 +11,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import ScoreWidget from "@/components/ui/ScoreWidget";
 import type { Profile, TaskLedger, DailyAttendance } from "@/lib/types";
 import {
   calculateTPS,
   calculateAS,
   calculateTotalScore,
-  getWorkingDaysInMonth,
+  getActiveDaysInMonth,
 } from "@/lib/calculations";
 import {
   User,
@@ -30,42 +31,50 @@ export default function MemberPage() {
   const params = useParams();
   const memberId = params.id as string;
   const { isAdmin, user, refreshKey } = useAuth();
+  const { activeWorkspace } = useWorkspace();
 
   const [member, setMember] = useState<Profile | null>(null);
   const [tasks, setTasks] = useState<TaskLedger[]>([]);
   const [attendance, setAttendance] = useState<DailyAttendance[]>([]);
+  const [allWorkspaceAttendance, setAllWorkspaceAttendance] = useState<DailyAttendance[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch member profile, their assigned tasks, and their attendance records
+  // Fetch member profile, workspace tasks (filtered to member), member attendance, and all
+  // workspace attendance (needed to compute active days in month for AS denominator).
   const fetchData = useCallback(async () => {
+    if (!activeWorkspace?.id) return;
     try {
       setLoading(true);
+      const workspaceId = activeWorkspace.id;
 
-      const [memberRes, tasksRes, attendanceRes] = await Promise.all([
+      const [memberRes, tasksRes, attendanceRes, wsAttendanceRes] = await Promise.all([
         fetch(`/api/members?id=${memberId}`),
-        fetch(`/api/tasks?assignee_id=${memberId}`), // I should check if tasks API supports assignee_id
-        fetch(`/api/attendance?user_id=${memberId}`) // I should check if attendance API supports user_id
+        fetch(`/api/tasks?workspaceId=${workspaceId}`),
+        fetch(`/api/attendance?user_id=${memberId}`),
+        fetch(`/api/attendance?workspaceId=${workspaceId}`), // all workspace attendance for active days
       ]);
 
       if (!memberRes.ok) throw new Error("Failed to fetch member");
-      
+
       const memberData = await memberRes.json();
-      const tasksData = tasksRes.ok ? await tasksRes.json() : [];
+      const allTasks = tasksRes.ok ? await tasksRes.json() : [];
       const attendanceData = attendanceRes.ok ? await attendanceRes.json() : [];
+      const wsAttendanceData = wsAttendanceRes.ok ? await wsAttendanceRes.json() : [];
 
       setMember(memberData);
-      setTasks(tasksData);
+      setTasks(allTasks.filter((t: { assignee_id: string }) => t.assignee_id === memberId));
       setAttendance(attendanceData);
+      setAllWorkspaceAttendance(wsAttendanceData);
     } catch (err) {
       console.error("Failed to fetch member data:", err);
     } finally {
       setLoading(false);
     }
-  }, [memberId]);
+  }, [memberId, activeWorkspace?.id]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData, refreshKey]);
+  }, [fetchData, refreshKey, activeWorkspace?.id]);
 
   if (loading) {
     return (
@@ -102,8 +111,11 @@ export default function MemberPage() {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
 
+  // Active days = unique dates this month where at least one workspace member was Present
+  const activeDays = getActiveDaysInMonth(allWorkspaceAttendance, currentYear, currentMonth);
+
   const tpsResult = calculateTPS(tasks, currentYear, currentMonth);
-  const asScore = calculateAS(attendance, currentYear, currentMonth);
+  const asScore = calculateAS(attendance, currentYear, currentMonth, activeDays);
   const totalScore = calculateTotalScore(tpsResult.score, asScore);
 
   const currentMonthAttendance = attendance.filter((a) => {
@@ -113,7 +125,7 @@ export default function MemberPage() {
   const presentDays = currentMonthAttendance.filter((a) => a.status === "Present").length;
   const lateDays = currentMonthAttendance.filter((a) => a.status === "Late").length;
   const absentDays = currentMonthAttendance.filter((a) => a.status === "Absent").length;
-  const totalScheduled = getWorkingDaysInMonth(currentYear, currentMonth);
+  const totalScheduled = activeDays;
 
   const completedTasks = tasks.filter((t) => t.status === "Completed");
   const inProgressTasks = tasks.filter((t) => t.status === "In Progress");
@@ -179,14 +191,14 @@ export default function MemberPage() {
         <ScoreWidget
           label="Task Performance"
           score={tpsResult.score}
-          maxScore={80}
+          maxScore={65}
           color="#337ea9"
           subtitle={`${tpsResult.weeklyBreakdown.filter((w) => w.tasks.length > 0).length} active weeks this month`}
         />
         <ScoreWidget
           label="Attendance"
           score={asScore}
-          maxScore={20}
+          maxScore={35}
           color="#448361"
           subtitle={`${presentDays} / ${totalScheduled} scheduled days`}
         />

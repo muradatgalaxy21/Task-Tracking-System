@@ -16,6 +16,18 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
   const user_id = searchParams.get("user_id");
+  const workspaceId = searchParams.get("workspaceId");
+
+  // When workspaceId is provided, resolve member IDs for that workspace so
+  // we only return attendance records belonging to workspace members.
+  let workspaceMemberIds: string[] | undefined;
+  if (workspaceId) {
+    const members = await prisma.workspaceMember.findMany({
+      where: { workspace_id: workspaceId },
+      select: { user_id: true },
+    });
+    workspaceMemberIds = members.map((m) => m.user_id);
+  }
 
   try {
     const attendance = await prisma.dailyAttendance.findMany({
@@ -23,6 +35,7 @@ export async function GET(req: Request) {
         AND: [
           ...(date ? [{ date: new Date(date) }] : []),
           ...(user_id ? [{ user_id }] : []),
+          ...(workspaceMemberIds ? [{ user_id: { in: workspaceMemberIds } }] : []),
         ]
       },
       orderBy: {

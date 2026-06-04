@@ -79,12 +79,13 @@ model Workspace {
   created_by  String?
   created_at  DateTime @default(now())
 
-  createdBy   User?             @relation("CreatedWorkspaces", fields: [created_by], references: [id], onDelete: SetNull)
-  members     WorkspaceMember[]
-  pages       Page[]
-  tasks       TaskLedger[]
-  invitations Invitation[]
-  chat_messages ChatMessage[]
+  createdBy      User?               @relation("CreatedWorkspaces", fields: [created_by], references: [id], onDelete: SetNull)
+  members        WorkspaceMember[]
+  pages          Page[]
+  tasks          TaskLedger[]
+  invitations    Invitation[]
+  chat_messages  ChatMessage[]
+  monthly_closes MonthlyClose[]
 }
 
 model WorkspaceMember {
@@ -275,4 +276,48 @@ model AccountDeletionToken {
   payload    String   // JSON string of { transfers: Record<workspaceId, newOwnerUserId>, workspacesToDelete: string[] }
   expires_at DateTime
   created_at DateTime @default(now())
+}
+
+// Stores each owner-initiated month-end close for a workspace.
+// "Draft" while owner reviews scores; "Finalized" once locked and salaries recorded.
+model MonthlyClose {
+  id             String    @id @default(uuid())
+  workspace_id   String
+  label          String    // e.g. "May 2026"
+  month          Int       // 0-indexed (0=Jan, 11=Dec)
+  year           Int
+  period_end     DateTime  // actual calendar date the close was run
+  total_revenue  Float     @default(0)
+  scheduled_days Int       @default(25) // working days counted in this period
+  // "Draft" | "Finalized"
+  status         String    @default("Draft")
+  created_by     String    // user_id of the Owner who ran the close
+  created_at     DateTime  @default(now())
+  finalized_at   DateTime?
+
+  workspace Workspace             @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  payouts   MemberMonthlyPayout[]
+
+  @@unique([workspace_id, month, year])
+}
+
+// Stores each member's finalized score and payout for a given MonthlyClose.
+model MemberMonthlyPayout {
+  id           String  @id @default(uuid())
+  close_id     String
+  workspace_id String
+  user_id      String
+  tps_score    Float   @default(0)
+  as_score     Float   @default(0)
+  total_score  Float   @default(0)
+  base_payout  Float   @default(0)
+  perf_payout  Float   @default(0)
+  final_payout Float   @default(0)
+  present_days   Int   @default(0)
+  scheduled_days Int   @default(25)
+  // JSON string: { [taskId]: overrideMultiplier } — non-destructive override applied at close time
+  multiplier_overrides String @default("{}")
+  created_at   DateTime @default(now())
+
+  monthly_close MonthlyClose @relation(fields: [close_id], references: [id], onDelete: Cascade)
 }

@@ -82,12 +82,12 @@ function getCalendarWeekOfMonth(date: Date): 1 | 2 | 3 | 4 {
 
 // ------------------------------------
 // 3. TASK PERFORMANCE SCORE (TPS)
-// Formula (weekly average method):
+// Formula (flat average method):
 //   - Filter completed tasks for the target month.
-//   - Group into 4 calendar-week buckets (Mon-Sun).
-//   - Weekly Avg = Sum(multipliers in week) / Tasks in week
-//   - TPS = ((W1 + W2 + W3 + W4) / 4) * 65
-//   - Weeks with no tasks contribute 0 to the average.
+//   - Flat Avg = Sum(all multipliers) / Total completed tasks
+//   - TPS = Flat Avg * 65
+//   - If no tasks completed: TPS = 0
+//   - Weekly breakdown is computed for display only — not used in score.
 // Max TPS = 65
 // ------------------------------------
 
@@ -177,8 +177,7 @@ export function calculateTPS(
     weekBuckets[week].push(m);
   }
 
-  // Calculate weekly averages; weeks with no tasks contribute 0
-  const weeklyAverages: [number, number, number, number] = [0, 0, 0, 0];
+  // Build weekly breakdown for display only (not used in score calculation)
   const weeklyBreakdown: WeeklyBreakdown[] = [];
 
   for (let w = 1; w <= 4; w++) {
@@ -187,15 +186,11 @@ export function calculateTPS(
       bucket.length > 0
         ? bucket.reduce((s, m) => s + m, 0) / bucket.length
         : 0;
-    weeklyAverages[w - 1] = avg;
 
     weeklyBreakdown.push({
       week: w as 1 | 2 | 3 | 4,
       tasks: completedThisMonth
-        .filter(
-          (t) =>
-            getCalendarWeekOfMonth(new Date(t.completed_at!)) === w
-        )
+        .filter((t) => getCalendarWeekOfMonth(new Date(t.completed_at!)) === w)
         .map((t) => ({
           title: t.title,
           multiplier:
@@ -208,56 +203,83 @@ export function calculateTPS(
     });
   }
 
-  // TPS = mean of 4 weekly averages * 65
-  const meanAvg =
-    (weeklyAverages[0] +
-      weeklyAverages[1] +
-      weeklyAverages[2] +
-      weeklyAverages[3]) /
-    4;
-  const score = Math.round(meanAvg * 65 * 100) / 100;
+  // TPS = flat average of all completed tasks this month * 65
+  const allMultipliers = completedThisMonth.map((t) =>
+    t.multiplier_earned != null
+      ? t.multiplier_earned
+      : getMultiplier(t.completed_at, t.max_deadline, t.review_submitted_at).multiplier
+  );
+  const flatAvg =
+    allMultipliers.length > 0
+      ? allMultipliers.reduce((s, m) => s + m, 0) / allMultipliers.length
+      : 0;
+  const score = Math.round(flatAvg * 65 * 100) / 100;
 
   return { score, weeklyBreakdown, details };
 }
 
 // ------------------------------------
 // 4. ATTENDANCE SCORE (AS)
-// Formula: AS = (Present Days / Total Scheduled Days) * 35
-// Total Scheduled Days = fixed: 25 for most months, 24 for February.
+// Formula: AS = (Member's Present Days / Active Days in Month) * 35
+// Active Days = unique dates where at least one workspace member was Present.
+// No hard limit — days where nobody came are excluded from the denominator.
 // Max AS = 35
 // ------------------------------------
 
-export function getWorkingDaysInMonth(year: number, month: number): number {
-  // Fixed logic as per user request: 25 days for regular months, 24 for February
-  const isFebruary = month === 1; // 0=Jan, 1=Feb
-  return isFebruary ? 24 : 25;
+// Returns the count of unique dates in the target month where at least one
+// member in allAttendance has status "Present". Pass all workspace attendance records.
+export function getActiveDaysInMonth(
+  allAttendance: DailyAttendance[],
+  year: number,
+  month: number
+): number {
+  const activeDates = new Set<string>();
+  for (const record of allAttendance) {
+    if (record.status !== "Present") continue;
+    const d = new Date(record.date);
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      activeDates.add(d.toDateString()); // unique per calendar day
+    }
+  }
+  return activeDates.size;
 }
 
 export function calculateAS(
   attendanceRecords: DailyAttendance[],
   targetYear?: number,
-  targetMonth?: number // 0-indexed
+  targetMonth?: number, // 0-indexed
+  scheduledDays?: number // active days in month; pass result of getActiveDaysInMonth
 ): number {
   const now = new Date();
   const year = targetYear ?? now.getFullYear();
   const month = targetMonth ?? now.getMonth();
 
-  // Count only 'Present' records within the target month
+  // Count only 'Present' records for this member within the target month
   const presentDays = attendanceRecords.filter((record) => {
     if (record.status !== "Present") return false;
     const recordDate = new Date(record.date);
-    return (
-      recordDate.getFullYear() === year && recordDate.getMonth() === month
-    );
+    return recordDate.getFullYear() === year && recordDate.getMonth() === month;
   }).length;
 
-  const totalScheduled = getWorkingDaysInMonth(year, month);
+  // Guard against division by zero if no one has come in yet this month
+  if (!scheduledDays || scheduledDays === 0) return 0;
 
-  // Guard against division by zero in months with no working days
-  if (totalScheduled === 0) return 0;
-
-  const score = (presentDays / totalScheduled) * 35;
+  const score = (presentDays / scheduledDays) * 35;
   return Math.round(score * 100) / 100;
+}
+
+// Returns count of weekdays (Mon-Fri) in a month up to (and including) the given end date.
+// Used when computing scheduled_days for a MonthlyClose.
+export function countWeekdaysInMonth(year: number, month: number, endDate?: Date): number {
+  const end = endDate ?? new Date(year, month + 1, 0); // default: last day of month
+  let count = 0;
+  const cursor = new Date(year, month, 1);
+  while (cursor <= end && cursor.getMonth() === month) {
+    const day = cursor.getDay(); // 0=Sun, 6=Sat
+    if (day !== 0 && day !== 6) count++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
 }
 
 // ------------------------------------

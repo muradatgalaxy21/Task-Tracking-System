@@ -13,12 +13,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import type { Profile, TaskLedger, DailyAttendance } from "@/lib/types";
 import {
   calculateTPS,
   calculateAS,
   calculateTotalScore,
   calculatePayouts,
+  getActiveDaysInMonth,
   type PayoutResult,
 } from "@/lib/calculations";
 import {
@@ -31,6 +33,7 @@ import {
 
 export default function PayoutPage() {
   const { isAdmin, loading: authLoading, refreshKey } = useAuth();
+  const { activeWorkspace } = useWorkspace();
   const [members, setMembers] = useState<Profile[]>([]);
   const [tasks, setTasks] = useState<TaskLedger[]>([]);
   const [attendance, setAttendance] = useState<DailyAttendance[]>([]);
@@ -38,15 +41,17 @@ export default function PayoutPage() {
   const [payouts, setPayouts] = useState<PayoutResult[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch all member profiles, tasks, and attendance records
+  // Fetch all member profiles, tasks, and attendance records scoped to the active workspace
   const fetchData = useCallback(async () => {
+    if (!activeWorkspace?.id) return;
     try {
       setLoading(true);
+      const workspaceId = activeWorkspace.id;
 
       const [membersRes, tasksRes, attendanceRes] = await Promise.all([
-        fetch("/api/members"),
-        fetch("/api/tasks"),
-        fetch("/api/attendance")
+        fetch(`/api/members?workspaceId=${workspaceId}`),
+        fetch(`/api/tasks?workspaceId=${workspaceId}`),
+        fetch(`/api/attendance?workspaceId=${workspaceId}`)
       ]);
 
       if (!membersRes.ok || !tasksRes.ok || !attendanceRes.ok) {
@@ -67,17 +72,19 @@ export default function PayoutPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeWorkspace?.id]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData, refreshKey]);
+  }, [fetchData, refreshKey, activeWorkspace?.id]);
 
   // Calculate payout distribution
   const handleCalculate = () => {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
+    // Active days = unique dates this month where at least one workspace member was Present
+    const activeDays = getActiveDaysInMonth(attendance, currentYear, currentMonth);
 
     const memberScores = members.map((member) => {
       const memberTasks = tasks.filter((t) => t.assignee_id === member.id);
@@ -85,7 +92,7 @@ export default function PayoutPage() {
         (a) => a.user_id === member.id
       );
       const tps = calculateTPS(memberTasks, currentYear, currentMonth);
-      const as_score = calculateAS(memberAttendance, currentYear, currentMonth);
+      const as_score = calculateAS(memberAttendance, currentYear, currentMonth, activeDays);
       const total = calculateTotalScore(tps.score, as_score);
 
       return {
@@ -234,8 +241,8 @@ export default function PayoutPage() {
             <thead>
               <tr>
                 <th>Member</th>
-                <th className="text-center">TPS (/80)</th>
-                <th className="text-center">AS (/20)</th>
+                <th className="text-center">TPS (/65)</th>
+                <th className="text-center">AS (/35)</th>
                 <th className="text-center">Total (/100)</th>
                 <th className="text-center">Share %</th>
                 <th className="text-center">Base (PKR)</th>
@@ -246,22 +253,17 @@ export default function PayoutPage() {
             <tbody>
               {members.map((member) => {
                 const now = new Date();
+                const yr = now.getFullYear();
+                const mo = now.getMonth();
+                const activeDaysDisplay = getActiveDaysInMonth(attendance, yr, mo);
                 const memberTasks = tasks.filter(
                   (t) => t.assignee_id === member.id
                 );
                 const memberAttendance = attendance.filter(
                   (a) => a.user_id === member.id
                 );
-                const tps = calculateTPS(
-                  memberTasks,
-                  now.getFullYear(),
-                  now.getMonth()
-                );
-                const as_score = calculateAS(
-                  memberAttendance,
-                  now.getFullYear(),
-                  now.getMonth()
-                );
+                const tps = calculateTPS(memberTasks, yr, mo);
+                const as_score = calculateAS(memberAttendance, yr, mo, activeDaysDisplay);
                 const total = calculateTotalScore(tps.score, as_score);
                 const payout = payouts.find((p) => p.memberId === member.id);
 
