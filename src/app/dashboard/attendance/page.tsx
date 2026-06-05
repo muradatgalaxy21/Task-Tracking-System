@@ -4,7 +4,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import type { Profile, DailyAttendance, AttendanceStatus } from "@/lib/types";
-import { Calendar, Save, Loader2, CheckCircle2 } from "lucide-react";
+import { Calendar, Save, Loader2, CheckCircle2, History, X, ChevronLeft, ChevronRight } from "lucide-react";
+
+// Safe ISO date slicer — avoids timezone shift from new Date() parsing
+function isoDateSlice(date: string | Date): string {
+  return typeof date === "string" ? date.slice(0, 10) : date.toISOString().slice(0, 10);
+}
 
 // Status options for the radio button group
 const STATUS_OPTIONS: { value: AttendanceStatus; label: string; activeColor: string }[] =
@@ -25,6 +30,15 @@ export default function AttendancePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // History slide-over state
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyRecords, setHistoryRecords] = useState<DailyAttendance[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyMonth, setHistoryMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   // Fetch members scoped to the active workspace only
   const fetchMembers = useCallback(async () => {
@@ -61,6 +75,33 @@ export default function AttendancePage() {
       setLoading(false);
     }
   }, [selectedDate]);
+
+  // Fetch all workspace attendance for the history slide-over
+  const fetchHistory = useCallback(async () => {
+    if (!activeWorkspace?.id) return;
+    try {
+      setHistoryLoading(true);
+      const res = await fetch(`/api/attendance?workspaceId=${activeWorkspace.id}`);
+      if (!res.ok) throw new Error("Failed to fetch history");
+      setHistoryRecords(await res.json());
+    } catch (err) {
+      console.error("Failed to fetch attendance history:", err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [activeWorkspace?.id]);
+
+  const openHistory = () => {
+    setHistoryOpen(true);
+    fetchHistory();
+  };
+
+  // Navigate history month by ±1
+  const shiftHistoryMonth = (delta: number) => {
+    const [yr, mo] = historyMonth.split("-").map(Number);
+    const d = new Date(yr, mo - 1 + delta, 1);
+    setHistoryMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
 
   // Re-fetch when active workspace or auth state changes
   useEffect(() => {
@@ -138,14 +179,131 @@ export default function AttendancePage() {
   }
 
 
+  // Build history table data for the selected month
+  const [histYr, histMo] = historyMonth.split("-").map(Number);
+  const histMonthLabel = new Date(histYr, histMo - 1, 1).toLocaleString("default", { month: "long", year: "numeric" });
+
+  // Unique sorted dates in the selected history month
+  const histDates = Array.from(new Set(
+    historyRecords
+      .filter((r) => isoDateSlice(r.date).startsWith(historyMonth))
+      .map((r) => isoDateSlice(r.date))
+  )).sort();
+
+  // Build lookup: date → userId → status
+  const histLookup: Record<string, Record<string, AttendanceStatus>> = {};
+  for (const r of historyRecords) {
+    const d = isoDateSlice(r.date);
+    if (!histLookup[d]) histLookup[d] = {};
+    histLookup[d][r.user_id] = r.status;
+  }
+
+  const STATUS_COLORS: Record<AttendanceStatus, string> = {
+    Present: "text-green-600 bg-green-50",
+    Late: "text-amber-600 bg-amber-50",
+    Absent: "text-red-500 bg-red-50",
+  };
+
   return (
+    <>
+    {/* History Slide-Over */}
+    {historyOpen && (
+      <div className="fixed inset-0 z-50 flex">
+        {/* Backdrop */}
+        <div className="flex-1 bg-black/30 backdrop-blur-sm" onClick={() => setHistoryOpen(false)} />
+        {/* Panel */}
+        <div className="w-full max-w-2xl bg-white shadow-2xl flex flex-col h-full overflow-hidden">
+          {/* Panel header */}
+          <div className="px-6 py-4 border-b border-neutral-200 flex items-center justify-between shrink-0">
+            <div>
+              <h2 className="text-base font-semibold text-neutral-800">Attendance History</h2>
+              <p className="text-xs text-neutral-400 mt-0.5">{activeWorkspace?.name}</p>
+            </div>
+            <button onClick={() => setHistoryOpen(false)} className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors">
+              <X size={18} className="text-neutral-500" />
+            </button>
+          </div>
+
+          {/* Month navigator */}
+          <div className="px-6 py-3 border-b border-neutral-100 flex items-center justify-between shrink-0">
+            <button onClick={() => shiftHistoryMonth(-1)} className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors">
+              <ChevronLeft size={16} className="text-neutral-500" />
+            </button>
+            <span className="text-sm font-medium text-neutral-700">{histMonthLabel}</span>
+            <button onClick={() => shiftHistoryMonth(1)} className="p-1.5 rounded-lg hover:bg-neutral-100 transition-colors">
+              <ChevronRight size={16} className="text-neutral-500" />
+            </button>
+          </div>
+
+          {/* Table */}
+          <div className="flex-1 overflow-auto">
+            {historyLoading ? (
+              <div className="p-6 space-y-3">
+                {[1,2,3,4,5].map((i) => <div key={i} className="skeleton h-10 rounded-lg" />)}
+              </div>
+            ) : histDates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-48 text-neutral-400 text-sm">
+                No attendance recorded for {histMonthLabel}.
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white border-b border-neutral-200">
+                  <tr>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider w-32">Date</th>
+                    {members.map((m) => (
+                      <th key={m.id} className="text-center px-3 py-3 text-xs font-medium text-neutral-500 uppercase tracking-wider">
+                        {m.full_name?.split(" ")[0] || m.email?.split("@")[0] || "?"}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {histDates.map((date) => {
+                    const dayLabel = new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", day: "numeric" });
+                    return (
+                      <tr key={date} className="hover:bg-neutral-50/60 transition-colors">
+                        <td className="px-4 py-2.5 text-xs text-neutral-500 font-medium">{dayLabel}</td>
+                        {members.map((m) => {
+                          const status = histLookup[date]?.[m.id];
+                          return (
+                            <td key={m.id} className="px-3 py-2.5 text-center">
+                              {status ? (
+                                <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[status]}`}>
+                                  {status}
+                                </span>
+                              ) : (
+                                <span className="text-neutral-300 text-xs">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
     <div className="space-y-6 animate-fade-in max-w-3xl">
       {/* Header */}
-      <div>
+      <div className="flex items-start justify-between">
+        <div>
         <h1 className="text-xl sm:text-2xl font-semibold text-neutral-800">Daily Attendance</h1>
         <p className="text-sm text-neutral-400 mt-1">
           Mark attendance for each team member by date
         </p>
+        </div>
+        <button
+          onClick={openHistory}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-sm text-neutral-600 font-medium transition-colors shrink-0 mt-1"
+        >
+          <History size={15} />
+          View History
+        </button>
       </div>
 
       {/* Date Picker */}
@@ -289,5 +447,6 @@ export default function AttendancePage() {
         )}
       </div>
     </div>
+    </>
   );
 }

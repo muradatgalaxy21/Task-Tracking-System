@@ -31,8 +31,8 @@ export async function POST(req: Request) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // 4. Resolve absolute directory path inside public/uploads
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
+    // 4. Resolve absolute directory path inside uploads/ directory in the project root
+    const uploadDir = path.join(process.cwd(), "uploads");
     await mkdir(uploadDir, { recursive: true });
 
     // 5. Generate a unique safe filename and full local path

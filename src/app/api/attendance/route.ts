@@ -18,18 +18,18 @@ export async function GET(req: Request) {
   const user_id = searchParams.get("user_id");
   const workspaceId = searchParams.get("workspaceId");
 
-  // When workspaceId is provided, resolve member IDs for that workspace so
-  // we only return attendance records belonging to workspace members.
-  let workspaceMemberIds: string[] | undefined;
-  if (workspaceId) {
-    const members = await prisma.workspaceMember.findMany({
-      where: { workspace_id: workspaceId },
-      select: { user_id: true },
-    });
-    workspaceMemberIds = members.map((m) => m.user_id);
-  }
-
   try {
+    // When workspaceId is provided, resolve member IDs so we only return
+    // attendance records belonging to workspace members.
+    let workspaceMemberIds: string[] | undefined;
+    if (workspaceId) {
+      const members = await prisma.workspaceMember.findMany({
+        where: { workspace_id: workspaceId },
+        select: { user_id: true },
+      });
+      workspaceMemberIds = members.map((m) => m.user_id);
+    }
+
     const attendance = await prisma.dailyAttendance.findMany({
       where: {
         AND: [

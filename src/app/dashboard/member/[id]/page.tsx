@@ -47,23 +47,22 @@ export default function MemberPage() {
       setLoading(true);
       const workspaceId = activeWorkspace.id;
 
-      const [memberRes, tasksRes, attendanceRes, wsAttendanceRes] = await Promise.all([
+      const [memberRes, tasksRes, wsAttendanceRes] = await Promise.all([
         fetch(`/api/members?id=${memberId}`),
         fetch(`/api/tasks?workspaceId=${workspaceId}`),
-        fetch(`/api/attendance?user_id=${memberId}`),
-        fetch(`/api/attendance?workspaceId=${workspaceId}`), // all workspace attendance for active days
+        fetch(`/api/attendance?workspaceId=${workspaceId}`), // full workspace attendance — filter client-side
       ]);
 
       if (!memberRes.ok) throw new Error("Failed to fetch member");
 
       const memberData = await memberRes.json();
       const allTasks = tasksRes.ok ? await tasksRes.json() : [];
-      const attendanceData = attendanceRes.ok ? await attendanceRes.json() : [];
       const wsAttendanceData = wsAttendanceRes.ok ? await wsAttendanceRes.json() : [];
 
       setMember(memberData);
       setTasks(allTasks.filter((t: { assignee_id: string }) => t.assignee_id === memberId));
-      setAttendance(attendanceData);
+      // Filter workspace attendance to this member's records only
+      setAttendance(wsAttendanceData.filter((a: { user_id: string }) => a.user_id === memberId));
       setAllWorkspaceAttendance(wsAttendanceData);
     } catch (err) {
       console.error("Failed to fetch member data:", err);
@@ -118,14 +117,36 @@ export default function MemberPage() {
   const asScore = calculateAS(attendance, currentYear, currentMonth, activeDays);
   const totalScore = calculateTotalScore(tpsResult.score, asScore);
 
+  // Safe date-string parser — slices ISO prefix directly to avoid timezone shifts.
+  // Turso returns dates as full ISO strings (e.g. "2024-05-28T19:00:00.000Z");
+  // using new Date() would shift the date in UTC+5/UTC-N timezones.
+  const isoYearMonth = (date: string | Date) => {
+    const s = typeof date === "string" ? date : date.toISOString();
+    const [yr, mo] = s.slice(0, 10).split("-").map(Number);
+    return { year: yr, month: mo - 1, key: `${yr}-${String(mo).padStart(2, "0")}` };
+  };
+
   const currentMonthAttendance = attendance.filter((a) => {
-    const d = new Date(a.date);
-    return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+    const { year, month } = isoYearMonth(a.date);
+    return year === currentYear && month === currentMonth;
   });
   const presentDays = currentMonthAttendance.filter((a) => a.status === "Present").length;
   const lateDays = currentMonthAttendance.filter((a) => a.status === "Late").length;
   const absentDays = currentMonthAttendance.filter((a) => a.status === "Absent").length;
   const totalScheduled = activeDays;
+
+  // Group all attendance records by month for historical display
+  const attendanceByMonth = attendance.reduce<Record<string, { present: number; late: number; absent: number; activeDays: number }>>((acc, record) => {
+    const { year, month, key } = isoYearMonth(record.date);
+    if (!acc[key]) acc[key] = { present: 0, late: 0, absent: 0, activeDays: getActiveDaysInMonth(allWorkspaceAttendance, year, month) };
+    if (record.status === "Present") acc[key].present++;
+    else if (record.status === "Late") acc[key].late++;
+    else if (record.status === "Absent") acc[key].absent++;
+    return acc;
+  }, {});
+
+  // Sort months newest first
+  const sortedMonths = Object.keys(attendanceByMonth).sort((a, b) => b.localeCompare(a));
 
   const completedTasks = tasks.filter((t) => t.status === "Completed");
   const inProgressTasks = tasks.filter((t) => t.status === "In Progress");
@@ -211,29 +232,96 @@ export default function MemberPage() {
         />
       </div>
 
-      {/* Attendance summary (current month) */}
-      <div className="glass-card p-5">
-        <h3 className="text-sm font-medium text-neutral-700 mb-4 flex items-center gap-2">
-          <Calendar size={16} className="text-warm-400" />
-          Attendance This Month
-          <span className="text-[10px] text-neutral-400 font-normal ml-auto">
-            {totalScheduled} working days scheduled
+      {/* Attendance — current month summary + full history */}
+      <div className="glass-card overflow-hidden">
+        <div className="px-5 py-4 border-b border-neutral-200/60 flex items-center justify-between">
+          <h3 className="text-sm font-medium text-neutral-700 flex items-center gap-2">
+            <Calendar size={16} className="text-warm-400" />
+            Attendance History
+          </h3>
+          <span className="text-[10px] text-neutral-400 font-normal">
+            {totalScheduled} active days this month
           </span>
-        </h3>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-green-600">{presentDays}</p>
-            <p className="text-xs text-neutral-500 mt-1">Present</p>
-          </div>
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-amber-600">{lateDays}</p>
-            <p className="text-xs text-neutral-500 mt-1">Late</p>
-          </div>
-          <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-red-500">{absentDays}</p>
-            <p className="text-xs text-neutral-500 mt-1">Absent</p>
+        </div>
+
+        {/* Current month highlight */}
+        <div className="px-5 py-4 bg-neutral-50/60 border-b border-neutral-100">
+          <p className="text-[10px] text-neutral-400 uppercase font-medium tracking-wider mb-3">{monthName}</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center">
+              <p className="text-xl font-bold text-green-600">{presentDays}</p>
+              <p className="text-[10px] text-neutral-500 mt-0.5">Present</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center">
+              <p className="text-xl font-bold text-amber-600">{lateDays}</p>
+              <p className="text-[10px] text-neutral-500 mt-0.5">Late</p>
+            </div>
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-center">
+              <p className="text-xl font-bold text-red-500">{absentDays}</p>
+              <p className="text-[10px] text-neutral-500 mt-0.5">Absent</p>
+            </div>
           </div>
         </div>
+
+        {/* All months history table */}
+        {sortedMonths.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="notion-table">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th className="text-center">Present</th>
+                  <th className="text-center">Late</th>
+                  <th className="text-center">Absent</th>
+                  <th className="text-center">Active Days</th>
+                  <th className="text-right">AS Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedMonths.map((key) => {
+                  const [yr, mo] = key.split("-").map(Number);
+                  const row = attendanceByMonth[key];
+                  const monthLabel = new Date(yr, mo - 1, 1).toLocaleString("default", { month: "long", year: "numeric" });
+                  const memberMonthAttendance = attendance.filter((a) => {
+                    const d = new Date(a.date);
+                    return d.getFullYear() === yr && d.getMonth() === mo - 1;
+                  });
+                  const asForMonth = calculateAS(memberMonthAttendance, yr, mo - 1, row.activeDays);
+                  const isCurrentMonth = yr === currentYear && mo - 1 === currentMonth;
+                  return (
+                    <tr key={key} className={isCurrentMonth ? "bg-blue-50/40" : ""}>
+                      <td className="px-4 py-3">
+                        <span className="text-sm font-medium text-neutral-800">{monthLabel}</span>
+                        {isCurrentMonth && (
+                          <span className="ml-2 text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">Current</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm font-semibold text-green-600">{row.present}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm font-semibold text-amber-600">{row.late}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm font-semibold text-red-500">{row.absent}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm text-neutral-500">{row.activeDays}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="text-sm font-bold text-neutral-800">{asForMonth} / 35</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="py-10 text-center text-neutral-400 text-sm">
+            No attendance records found.
+          </div>
+        )}
       </div>
 
       {/* Task stats strip */}

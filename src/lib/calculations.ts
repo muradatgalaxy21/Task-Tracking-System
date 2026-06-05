@@ -236,9 +236,11 @@ export function getActiveDaysInMonth(
   const activeDates = new Set<string>();
   for (const record of allAttendance) {
     if (record.status !== "Present") continue;
-    const d = new Date(record.date);
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      activeDates.add(d.toDateString()); // unique per calendar day
+    // Slice ISO prefix directly — avoids timezone-shift bugs with new Date()
+    const s = typeof record.date === "string" ? record.date : (record.date as unknown as Date).toISOString();
+    const [yr, mo] = s.slice(0, 10).split("-").map(Number);
+    if (yr === year && mo - 1 === month) {
+      activeDates.add(s.slice(0, 10)); // unique per calendar day
     }
   }
   return activeDates.size;
@@ -254,11 +256,13 @@ export function calculateAS(
   const year = targetYear ?? now.getFullYear();
   const month = targetMonth ?? now.getMonth();
 
-  // Count only 'Present' records for this member within the target month
+  // Count only 'Present' records for this member within the target month.
+  // Slice ISO prefix directly to avoid timezone-shift bugs with new Date().
   const presentDays = attendanceRecords.filter((record) => {
     if (record.status !== "Present") return false;
-    const recordDate = new Date(record.date);
-    return recordDate.getFullYear() === year && recordDate.getMonth() === month;
+    const s = typeof record.date === "string" ? record.date : (record.date as unknown as Date).toISOString();
+    const [yr, mo] = s.slice(0, 10).split("-").map(Number);
+    return yr === year && mo - 1 === month;
   }).length;
 
   // Guard against division by zero if no one has come in yet this month

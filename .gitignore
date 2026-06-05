@@ -59,3 +59,5 @@ venv/
 test-prisma.ts
 db-admin.mjs
 
+# User uploads
+/uploads
