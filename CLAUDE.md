@@ -61,10 +61,11 @@ src/app/
     invitations/            # invite code CRUD
     members/                # user lookup + workspace-scoped member list
     tasks/                  # task CRUD
-    upload/                 # POST — file upload, stores to public/uploads/
+    upload/                 # POST — file upload, stores to uploads/ at project root
     workspaces/             # workspace CRUD + join
     notifications/          # in-app notifications
     settings/profile/       # profile update with email-link verification
+  uploads/[filename]/       # GET — serves files from project-root uploads/ with MIME detection
 ```
 
 ### Auth & Role System
@@ -99,6 +100,8 @@ Two components combine into a 100-point score:
 - **TPS (max 80)** — Task Performance Score. Completed tasks per calendar month are grouped into 4 weekly buckets (Mon–Sun). Weekly average multiplier is computed; TPS = mean of 4 week averages × 80. Multipliers: on-time = 1.0, 1 day late = 0.60, 2 days late = 0.40, 3+ days late = 0.0. The multiplier is stored on `TaskLedger.multiplier_earned` at completion time and takes precedence over dynamic recalculation.
 - **AS (max 20)** — Attendance Score. `(Present days / scheduled days) × 20`. Scheduled days are fixed: 25 for most months, 24 for February.
 
+**Date parsing rule:** Never use `new Date(dateString)` to compare attendance dates — Turso returns ISO strings (e.g. `"2024-05-28T19:00:00.000Z"`) and `new Date()` will shift the date in non-UTC timezones. Always slice the ISO prefix directly: `s.slice(0, 10)` → `"2024-05-28"`, then split on `"-"` to extract year/month/day. This pattern is used throughout `calculations.ts` and attendance UI components.
+
 Payouts use a 3-tier split: 60% Treasury / 24% Base (equal) / 16% Performance (score-proportional).
 
 ### Task Status Convention
@@ -120,7 +123,7 @@ Invite codes are looked up in the `Invitation` table first (new codes, stored up
 
 `GET /api/chat?workspaceId=X` — paginated messages, optional `?since=<ISO>` for polling.  
 `POST /api/chat` — send a message; `attachments` is a JSON array of `{ name, url, type }` objects uploaded via `/api/upload` beforehand.  
-File uploads land in `public/uploads/` and are served as static assets. The `Upload` route accepts `multipart/form-data` with a single `file` field and returns `{ url, name, type, size }`.
+File uploads land in `uploads/` at the project root (not inside `public/`) and are served via the dynamic route `src/app/uploads/[filename]/route.ts`. The `Upload` route accepts `multipart/form-data` with a single `file` field and returns `{ url, name, type, size }`. Avatar images are resized and compressed to 400×400 JPEG at 0.8 quality client-side before upload via canvas (see `optimizeImage` in `ProfileSettingsPanel.tsx`).
 
 ### Shared Components
 
