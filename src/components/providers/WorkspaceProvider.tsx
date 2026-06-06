@@ -48,19 +48,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(null);
   const [wsLoading, setWsLoading] = useState(true);
 
+  // Persist the active workspace ID per user so selection survives page reloads
+  const storageKey = user?.id ? `activeWorkspaceId:${user.id}` : null;
+
   const fetchWorkspaces = useCallback(async () => {
     if (!user?.id) return;
+    const savedId = storageKey ? localStorage.getItem(storageKey) : null;
     try {
       const res = await fetch("/api/workspaces");
       if (!res.ok) return;
       const data: Workspace[] = await res.json();
       setWorkspaces(data);
-      // Keep current selection if it still exists; otherwise default to first
       setActiveWorkspaceState((prev) => {
+        // If a workspace is already active in memory and still exists, refresh its object
         if (prev && data.find((w) => w.id === prev.id)) {
-          // Refresh the stored workspace object so member_role stays current
           return data.find((w) => w.id === prev.id) ?? prev;
         }
+        // Restore the last workspace the user had selected (persisted in localStorage)
+        if (savedId) {
+          const saved = data.find((w) => w.id === savedId);
+          if (saved) return saved;
+        }
+        // Fall back to first workspace only when no saved preference exists
         return data[0] ?? null;
       });
     } catch (err) {
@@ -68,7 +77,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } finally {
       setWsLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, storageKey]);
 
   useEffect(() => {
     // Session is still resolving — wait before making any decisions
@@ -86,6 +95,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const setActiveWorkspace = (ws: Workspace) => {
     setActiveWorkspaceState(ws);
+    // Persist the choice so the next page load restores it instead of defaulting to first
+    if (storageKey) localStorage.setItem(storageKey, ws.id);
   };
 
   // Workspace-local role for the active workspace

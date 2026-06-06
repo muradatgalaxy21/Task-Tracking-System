@@ -76,6 +76,8 @@ export default function LedgerPage() {
         return "status-in-review";
       case "Completed":
         return "status-completed";
+      case "Not Done":
+        return "bg-red-50 text-red-600";
       default:
         return "";
     }
@@ -125,6 +127,8 @@ export default function LedgerPage() {
               <option value="In Progress">In Progress</option>
               <option value="In Review">In Review</option>
               <option value="Completed">Completed</option>
+              <option value="Not Done">Not Done</option>
+              <option value="Discarded">Discarded</option>
             </select>
           </div>
 
@@ -181,17 +185,20 @@ export default function LedgerPage() {
                     const assignee = members.find(
                       (m) => m.id === task.assignee_id
                     );
+                    const isTerminalTask = task.status === "Completed" || task.status === "Not Done";
                     const multiplier =
-                      task.multiplier_earned ?? (task.status === "Completed"
+                      task.multiplier_earned ?? (isTerminalTask
                         ? getMultiplier(task.completed_at || new Date().toISOString(), task.max_deadline).multiplier
                         : 0);
                     const label =
                       task.status === "Completed"
                         ? getMultiplier(task.completed_at || new Date().toISOString(), task.max_deadline).label
+                        : task.status === "Not Done"
+                        ? "Not Done"
                         : "";
                     const isOverdue =
                       new Date(task.max_deadline) < new Date() &&
-                      task.status !== "Completed";
+                      !isTerminalTask;
 
                     return (
                       <tr
@@ -262,12 +269,12 @@ export default function LedgerPage() {
                                 : "text-red-500"
                             }`}
                           >
-                            {task.status === "Completed"
+                            {isTerminalTask
                               ? `${multiplier}x`
                               : "-"}
                           </span>
                           <p className="text-[10px] text-neutral-400">
-                            {task.status === "Completed" ? label : ""}
+                            {label}
                           </p>
                         </td>
 
@@ -275,7 +282,7 @@ export default function LedgerPage() {
                         <td className="px-4 py-3 text-center">
                           <span
                             className={`text-sm font-bold ${
-                              task.status === "Completed"
+                              isTerminalTask
                                 ? multiplier >= 1.0
                                   ? "text-green-600"
                                   : multiplier >= 0.6
@@ -286,7 +293,7 @@ export default function LedgerPage() {
                                 : "text-neutral-300"
                             }`}
                           >
-                            {task.status === "Completed" ? multiplier : "-"}
+                            {isTerminalTask ? multiplier : "-"}
                           </span>
                         </td>
                       </tr>

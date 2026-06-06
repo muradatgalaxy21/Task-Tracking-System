@@ -26,7 +26,7 @@ import {
 
 type ViewMode = "list" | "kanban";
 // Explicit union so the compiler enforces every tab ID at the call site
-type TabType = "All" | "Todo" | "In Progress" | "In Review" | "Completed" | "Discarded";
+type TabType = "All" | "Todo" | "In Progress" | "In Review" | "Completed" | "Not Done" | "Discarded";
 
 const TABS: { id: TabType; label: string; color: string }[] = [
   { id: "All",         label: "All",        color: "#37352f"  },
@@ -34,6 +34,7 @@ const TABS: { id: TabType; label: string; color: string }[] = [
   { id: "In Progress", label: "In Progress", color: "#337ea9"  },
   { id: "In Review",   label: "Review",      color: "#cb912f"  },
   { id: "Completed",   label: "Completed",   color: "#448361"  },
+  { id: "Not Done",    label: "Not Done",    color: "#dc2626"  },
   { id: "Discarded",   label: "Discarded",   color: "#b0a9a2"  },
 ];
 

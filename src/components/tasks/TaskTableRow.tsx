@@ -25,20 +25,22 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
   const [loading, setLoading] = useState(false);
 
   // Inline auth for delete: admins always, assignees only when task is not locked
-  const isLocked  = ["In Review", "Completed", "Discarded"].includes(task.status);
+  const isTerminal = ["Completed", "Not Done", "Discarded"].includes(task.status);
+  const isLocked   = ["In Review", "Completed", "Not Done", "Discarded"].includes(task.status);
   const canDelete = isWorkspaceAdmin;
 
   const assignee = members.find((m) => m.id === task.assignee_id);
 
   const deadline = getDeadlineInfo(task.max_deadline);
-  const showDeadlineColor = task.status !== "Completed" && task.status !== "Discarded";
+  const showDeadlineColor = !isTerminal;
 
   const totalSubTasks = task.sub_tasks?.length || 0;
   const completedSubTasks =
     task.sub_tasks?.filter((st) => st.status === "Completed").length || 0;
 
+  // Show multiplier for both Completed and Not Done tasks
   const displayMultiplier =
-    task.status === "Completed"
+    (task.status === "Completed" || task.status === "Not Done")
       ? (task.multiplier_earned ??
           getMultiplier(
             task.completed_at || new Date().toISOString(),
@@ -53,6 +55,7 @@ export default function TaskTableRow({ task, members, onUpdate, onOpenPanel, isS
       case "In Progress": return "#337ea9";
       case "In Review":   return "#cb912f";
       case "Completed":   return "#448361";
+      case "Not Done":    return "#dc2626";
       case "Discarded":   return "#b0a9a2";
       default:            return "#91918e";
     }

@@ -40,21 +40,23 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
   const [loading, setLoading] = useState(false);
 
   const assignee  = members.find((m) => m.id === task.assignee_id);
-  const isLocked  = ["In Review", "Completed", "Discarded"].includes(task.status);
+  const isTerminal = ["Completed", "Not Done", "Discarded"].includes(task.status);
+  const isLocked   = ["In Review", "Completed", "Not Done", "Discarded"].includes(task.status);
   // Admins can always delete; Managers can delete their own unlocked tasks; Members cannot delete
   const canDelete = isWorkspaceAdmin || (isWorkspaceManager && user?.id === task.assignee_id && !isLocked);
 
-  const isDiscarded = task.status === "Discarded";
+  const isDiscarded = task.status === "Discarded" || task.status === "Not Done";
   const deadline    = getDeadlineInfo(task.max_deadline);
-  // Completed and Discarded tasks don't show urgency coloring
-  const showDeadlineColor = task.status !== "Completed" && task.status !== "Discarded";
+  // Terminal tasks don't show urgency coloring
+  const showDeadlineColor = !isTerminal;
 
   const totalSubTasks = task.sub_tasks?.length || 0;
   const completedSubTasks =
     task.sub_tasks?.filter((st) => st.status === "Completed").length || 0;
 
+  // Show multiplier chip for Completed and Not Done tasks
   const displayMultiplier =
-    task.status === "Completed"
+    (task.status === "Completed" || task.status === "Not Done")
       ? (task.multiplier_earned ??
           getMultiplier(
             task.completed_at || new Date().toISOString(),
@@ -126,7 +128,7 @@ export default function TaskCard({ task, members, onUpdate, onOpenPanel }: TaskC
           {showDeadlineColor && deadline.isOverdue
             ? <AlertTriangle size={11} />
             : <Clock size={11} />}
-          {task.status === "Completed" || task.status === "Discarded"
+          {isTerminal
             ? new Date(task.max_deadline).toLocaleDateString("en-US", { month: "short", day: "numeric" })
             : deadline.label}
         </span>

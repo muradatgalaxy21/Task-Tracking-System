@@ -388,7 +388,7 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
 
   // Admins can always delete; Managers can delete their own unlocked tasks.
   // Members cannot delete tasks at all.
-  const isLocked    = ["In Review", "Completed", "Discarded"].includes(task.status);
+  const isLocked    = ["In Review", "Completed", "Not Done", "Discarded"].includes(task.status);
   const isDeletable = isWorkspaceAdmin || (isWorkspaceManager && isOwnTask && !isLocked);
 
   // Legacy canEdit alias used by existing sub-components (metadata scope)
@@ -397,8 +397,9 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
   const assignee = members.find((m) => m.id === task.assignee_id);
 
   const deadline = getDeadlineInfo(task.max_deadline);
-  const isOverdue = deadline.isOverdue && task.status !== "Completed" && task.status !== "Discarded";
-  const showDeadlineColor = task.status !== "Completed" && task.status !== "Discarded";
+  const isTerminal = ["Completed", "Not Done", "Discarded"].includes(task.status);
+  const isOverdue = deadline.isOverdue && !isTerminal;
+  const showDeadlineColor = !isTerminal;
 
   const taskDisplayId = `AB-${task.task_id.slice(0, 6).toUpperCase()}`;
 
@@ -410,8 +411,9 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
     }
   })();
 
+  // Show multiplier for both Completed and Not Done; Not Done always stores 0
   const displayMultiplier =
-    task.status === "Completed"
+    (task.status === "Completed" || task.status === "Not Done")
       ? (task.multiplier_earned ??
           getMultiplier(task.completed_at || new Date().toISOString(), task.max_deadline, task.review_submitted_at).multiplier)
       : null;
@@ -454,6 +456,7 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
         const { multiplier } = getMultiplier(new Date().toISOString(), task.max_deadline, task.review_submitted_at);
         updateData.multiplier_earned = multiplier;
       }
+      // Not Done is set to 0 multiplier server-side; no extra payload needed here
       const res = await fetch("/api/tasks", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -470,7 +473,7 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
 
   const getAllowedTransitions = (): TaskStatus[] => {
     // Admins can move to any status including terminal ones
-    if (isWorkspaceAdmin) return ["Todo", "In Progress", "In Review", "Completed", "Discarded"];
+    if (isWorkspaceAdmin) return ["Todo", "In Progress", "In Review", "Completed", "Not Done", "Discarded"];
     // Non-owners/admins cannot advance from terminal states
     if (!isOwnTask) return [];
     switch (task.status) {
@@ -500,6 +503,7 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
     "In Progress": "bg-blue-50 text-blue-700 border-blue-200",
     "In Review":   "bg-amber-50 text-amber-700 border-amber-200",
     "Completed":   "bg-green-50 text-green-700 border-green-200",
+    "Not Done":    "bg-red-50 text-red-600 border-red-200",
     "Discarded":   "bg-neutral-100 text-neutral-400 border-neutral-200",
   }[task.status] ?? "bg-neutral-100 text-neutral-500 border-neutral-200";
 
@@ -530,7 +534,8 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
                   disabled={saving}
                   className={`text-[11px] font-medium px-2 py-0.5 rounded border cursor-pointer focus:outline-none focus:border-warm-400 transition-colors appearance-none ${statusBadgeClass}`}
                 >
-                  {(["Todo", "In Progress", "In Review", "Completed"] as TaskStatus[]).map((s) => (
+                  {/* Current status is always shown; allowed transitions follow */}
+                  {([task.status, ...allowedTransitions] as TaskStatus[]).map((s) => (
                     <option key={s} value={s}>
                       {STATUS_LABELS[s] ?? s}
                     </option>
@@ -885,7 +890,7 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
                 <div className="space-y-2">
                   <p className="text-[10px] uppercase tracking-wider font-semibold text-neutral-400">Move to</p>
                   <div className="flex gap-2 flex-wrap">
-                    {(["Todo", "In Progress", "In Review", "Completed", "Discarded"] as TaskStatus[])
+                    {(["Todo", "In Progress", "In Review", "Completed", "Not Done", "Discarded"] as TaskStatus[])
                       .filter((s) => allowedTransitions.includes(s))
                       .map((s) => {
                         const colorMap: Record<TaskStatus, string> = {
@@ -893,14 +898,16 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
                           "In Progress": "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100",
                           "In Review":   "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100",
                           "Completed":   "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100",
-                          "Discarded":   "bg-red-50 text-red-600 border-red-200 hover:bg-red-100",
+                          "Not Done":    "bg-red-50 text-red-600 border-red-200 hover:bg-red-100",
+                          "Discarded":   "bg-neutral-100 text-neutral-400 border-neutral-200 hover:bg-neutral-200",
                         };
                         const dotMap: Record<TaskStatus, string> = {
                           "Todo":        "bg-neutral-400",
                           "In Progress": "bg-blue-500",
                           "In Review":   "bg-amber-500",
                           "Completed":   "bg-emerald-500",
-                          "Discarded":   "bg-red-400",
+                          "Not Done":    "bg-red-500",
+                          "Discarded":   "bg-neutral-300",
                         };
                         return (
                           <button

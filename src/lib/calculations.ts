@@ -122,10 +122,14 @@ export function calculateTPS(
   const year = targetYear ?? now.getFullYear();
   const month = targetMonth ?? now.getMonth();
 
-  // Filter to only completed tasks within the target calendar month
+  // "Not Done" tasks are counted in TPS with multiplier 0 — they close the task but penalise the score
+  const isTerminalCounted = (task: TaskLedger) =>
+    (task.status === "Completed" || task.status === "Not Done") && !!task.completed_at;
+
+  // Filter to completed/not-done tasks within the target calendar month
   const completedThisMonth = tasks.filter((task) => {
-    if (task.status !== "Completed" || !task.completed_at) return false;
-    const completedDate = new Date(task.completed_at);
+    if (!isTerminalCounted(task)) return false;
+    const completedDate = new Date(task.completed_at!);
     return (
       completedDate.getFullYear() === year &&
       completedDate.getMonth() === month
@@ -134,25 +138,25 @@ export function calculateTPS(
 
   // Build detail rows for all tasks (including non-completed this month for UI)
   const details = tasks.map((task) => {
-    const isCompleted = task.status === "Completed" && !!task.completed_at;
+    const isCounted = isTerminalCounted(task);
     // Use stored multiplier_earned if available; fall back to dynamic calculation
     const storedMultiplier = task.multiplier_earned;
     const { multiplier, hoursLate, label } =
       storedMultiplier != null
-        ? { multiplier: storedMultiplier, hoursLate: 0, label: "Stored" }
+        ? { multiplier: storedMultiplier, hoursLate: 0, label: task.status === "Not Done" ? "Not Done" : "Stored" }
         : getMultiplier(task.completed_at, task.max_deadline, task.review_submitted_at);
 
     const weekOfMonth =
-      isCompleted && task.completed_at
+      isCounted && task.completed_at
         ? getCalendarWeekOfMonth(new Date(task.completed_at))
         : null;
 
     return {
       taskId: task.task_id,
       title: task.title,
-      multiplier: isCompleted ? multiplier : 0,
+      multiplier: isCounted ? multiplier : 0,
       hoursLate,
-      label: isCompleted ? label : "Not Completed",
+      label: isCounted ? label : "Not Completed",
       completedAt: task.completed_at,
       weekOfMonth,
     };

@@ -148,11 +148,16 @@ export default function MemberPage() {
   // Sort months newest first
   const sortedMonths = Object.keys(attendanceByMonth).sort((a, b) => b.localeCompare(a));
 
-  const completedTasks = tasks.filter((t) => t.status === "Completed");
+  // "Not Done" is a closed terminal state — it counts toward closed tasks
+  const completedTasks = tasks.filter((t) => t.status === "Completed" || t.status === "Not Done");
   const inProgressTasks = tasks.filter((t) => t.status === "In Progress");
   const inReviewTasks = tasks.filter((t) => t.status === "In Review");
   const overdueTasks = tasks.filter(
-    (t) => new Date(t.max_deadline) < new Date() && t.status !== "Completed"
+    (t) =>
+      new Date(t.max_deadline) < new Date() &&
+      t.status !== "Completed" &&
+      t.status !== "Not Done" &&
+      t.status !== "Discarded"
   );
 
   const monthName = now.toLocaleString("default", { month: "long", year: "numeric" });

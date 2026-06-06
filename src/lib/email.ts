@@ -212,3 +212,221 @@ export async function sendAccountDeletionVerificationEmail({
     console.error("sendAccountDeletionVerificationEmail failed:", err);
   }
 }
+
+// Sends an email notification to the assignee when a task (or recurring task batch) is created.
+// Wrap the entire email dispatch process inside try-catch block for robust error handling.
+export async function sendTaskCreatedEmail({
+  toEmail,
+  toName,
+  creatorName,
+  workspaceName,
+  taskDetails,
+}: {
+  toEmail: string;
+  toName: string;
+  creatorName: string;
+  workspaceName: string;
+  taskDetails: {
+    title: string;
+    description?: string;
+    deadline: Date;
+    priority?: string;
+    estimatedDays?: number;
+  }[];
+}) {
+  // 1. Verify SMTP server configurations. If credentials are not present, log fallback details to server console.
+  const smtpConfigured =
+    process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
+
+  if (!smtpConfigured) {
+    console.log(`[TASK CREATED] Mock email to ${toEmail} (${toName}):`);
+    console.log(`Creator: ${creatorName}, Workspace: ${workspaceName}`);
+    console.log("Tasks created:", JSON.stringify(taskDetails, null, 2));
+    return;
+  }
+
+  try {
+    const isBatch = taskDetails.length > 1;
+    const subject = isBatch
+      ? `New Recurring Tasks Assigned: ${taskDetails[0].title.replace(/ 1\/\d+$/, "")} (${taskDetails.length} occurrences)`
+      : `New Task Assigned: ${taskDetails[0].title}`;
+
+    // 2. Build the task list items markup using HSL gradients and modern typography rules.
+    const taskItemsHtml = taskDetails
+      .map((t) => {
+        const priorityColor =
+          t.priority === "High"
+            ? "#ef4444"
+            : t.priority === "Medium"
+            ? "#f59e0b"
+            : "#10b981";
+        return `
+        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+          <h3 style="color: #0f172a; margin: 0 0 8px 0; font-size: 16px; font-weight: 600;">${t.title}</h3>
+          ${t.description ? `<p style="color: #64748b; font-size: 14px; margin: 0 0 12px 0; line-height: 1.5;">${t.description}</p>` : ""}
+          <div style="display: flex; gap: 12px; font-size: 12px; color: #475569; flex-wrap: wrap;">
+            <span style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 6px;">
+              <strong>Deadline:</strong> ${new Date(t.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <span style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 6px;">
+              <strong>Priority:</strong> <span style="color: ${priorityColor}; font-weight: 600;">${t.priority || "Medium"}</span>
+            </span>
+            ${t.estimatedDays ? `
+            <span style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 6px;">
+              <strong>Est. Days:</strong> ${t.estimatedDays}
+            </span>` : ""}
+          </div>
+        </div>
+      `;
+      })
+      .join("");
+
+    // 3. Setup nodemailer client instance and send the generated HTML email message body.
+    const transporter = createTransporter();
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+    await transporter.sendMail({
+      from: `"AI & Beyond Planner" <${process.env.SMTP_USER}>`,
+      to: toEmail,
+      subject,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: 'Inter', Arial, sans-serif; background: #fafaf9; margin: 0; padding: 40px 20px;">
+  <div style="max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e7e5e4; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+    <div style="background: linear-gradient(135deg, #4f46e5, #7c3aed); padding: 28px; text-align: center;">
+      <p style="color: rgba(255,255,255,0.85); font-size: 12px; font-weight: 700; letter-spacing: 1.5px; margin: 0 0 6px 0; text-transform: uppercase;">AI & Beyond Workspace</p>
+      <h1 style="color: #ffffff; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.5px;">Task Assignment Notification</h1>
+    </div>
+    <div style="padding: 28px; background: #fafaf9;">
+      <p style="font-size: 15px; color: #475569; margin: 0 0 16px 0;">Hi ${toName},</p>
+      <p style="font-size: 15px; color: #1e293b; margin: 0 0 24px 0; line-height: 1.6;">
+        <strong>${creatorName}</strong> has assigned new task activity to you in the <strong>${workspaceName}</strong> workspace:
+      </p>
+
+      ${taskItemsHtml}
+
+      <div style="text-align: center; margin-top: 32px; margin-bottom: 12px;">
+        <a href="${appUrl}/dashboard"
+           style="display: inline-block; padding: 13px 28px; background: #4f46e5; color: white !important; text-decoration: none; border-radius: 10px; font-size: 15px; font-weight: 600; box-shadow: 0 4px 6px rgba(79, 70, 229, 0.15);">
+          Open Task Dashboard
+        </a>
+      </div>
+    </div>
+    <div style="padding: 16px 28px; border-top: 1px solid #e7e5e4; background: #ffffff; text-align: center;">
+      <p style="font-size: 11px; color: #94a3b8; margin: 0;">This is an automated task manager alert. Please do not reply directly.</p>
+    </div>
+  </div>
+</body>
+</html>
+      `,
+    });
+  } catch (err) {
+    // 4. Log detailed SMTP errors to the console instead of throwing up so execution doesn't halt.
+    console.error("sendTaskCreatedEmail failed:", err);
+  }
+}
+
+// Sends an email notification to alert the user of an approaching task deadline.
+// Uses try-catch blocks to catch and log any communication errors gracefully.
+export async function sendDeadlineApproachingEmail({
+  toEmail,
+  toName,
+  taskTitle,
+  deadline,
+  priority,
+}: {
+  toEmail: string;
+  toName: string;
+  taskTitle: string;
+  deadline: Date;
+  priority?: string;
+}) {
+  // 1. Verify SMTP credentials availability. If not present, log fallback warning to server console.
+  const smtpConfigured =
+    process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
+
+  if (!smtpConfigured) {
+    console.log(`[DEADLINE ALERT MOCK] Task: "${taskTitle}" is due soon for ${toEmail}`);
+    return;
+  }
+
+  try {
+    const transporter = createTransporter();
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const priorityColor =
+      priority === "High"
+        ? "#ef4444"
+        : priority === "Medium"
+        ? "#f59e0b"
+        : "#10b981";
+
+    // 2. Dispatch the warning alert email to the assignee about the imminent deadline.
+    await transporter.sendMail({
+      from: `"AI & Beyond Coordinator" <${process.env.SMTP_USER}>`,
+      to: toEmail,
+      subject: `Urgent: Deadline Approaching for "${taskTitle}"`,
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: 'Inter', Arial, sans-serif; background: #fafaf9; margin: 0; padding: 40px 20px;">
+  <div style="max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e7e5e4; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+    <div style="background: linear-gradient(135deg, #e11d48, #ea580c); padding: 28px; text-align: center;">
+      <p style="color: rgba(255,255,255,0.85); font-size: 12px; font-weight: 700; letter-spacing: 1.5px; margin: 0 0 6px 0; text-transform: uppercase;">Deadline Warning Alert</p>
+      <h1 style="color: #ffffff; font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.5px;">Task Approaching Deadline</h1>
+    </div>
+    <div style="padding: 28px; background: #fafaf9;">
+      <p style="font-size: 15px; color: #475569; margin: 0 0 16px 0;">Hi ${toName},</p>
+      <p style="font-size: 15px; color: #1e293b; margin: 0 0 20px 0; line-height: 1.6;">
+        The deadline for your assigned task <strong>"${taskTitle}"</strong> is approaching quickly. Please review the details below:
+      </p>
+
+      <div style="background: #ffffff; border: 1px solid #fca5a5; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+        <h3 style="color: #0f172a; margin: 0 0 12px 0; font-size: 16px; font-weight: 600;">${taskTitle}</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Deadline:</td>
+            <td style="padding: 6px 0; color: #e11d48; font-weight: 600;">
+              ${new Date(deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Priority:</td>
+            <td style="padding: 6px 0; color: ${priorityColor}; font-weight: 600;">${priority || "Medium"}</td>
+          </tr>
+        </table>
+      </div>
+
+      <p style="font-size: 14px; color: #475569; margin: 0 0 24px 0; line-height: 1.5;">
+        Please complete the requirements and submit the task for evaluation or request an extension if required. Maintaining timely task completion is critical for your Task Performance Score (TPS).
+      </p>
+
+      <div style="text-align: center; margin-bottom: 12px;">
+        <a href="${appUrl}/dashboard"
+           style="display: inline-block; padding: 13px 28px; background: #e11d48; color: white !important; text-decoration: none; border-radius: 10px; font-size: 15px; font-weight: 600; box-shadow: 0 4px 6px rgba(225, 29, 72, 0.15);">
+          Open Task Dashboard
+        </a>
+      </div>
+    </div>
+    <div style="padding: 16px 28px; border-top: 1px solid #e7e5e4; background: #ffffff; text-align: center;">
+      <p style="font-size: 11px; color: #94a3b8; margin: 0;">This is an automated time-sensitive system notification.</p>
+    </div>
+  </div>
+</body>
+</html>
+      `,
+    });
+  } catch (err) {
+    // 3. Handle errors and log descriptions of failures cleanly without throwing.
+    console.error("sendDeadlineApproachingEmail failed:", err);
+  }
+}
+

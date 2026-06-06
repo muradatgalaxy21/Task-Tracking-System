@@ -7,6 +7,7 @@ import { hasMinimumRole } from "@/lib/rbac";
 import { resolveEffectiveRole } from "@/lib/rbac-utils";
 import { STATUS_LABELS } from "@/lib/types";
 import { writeAuditLog } from "@/lib/audit";
+import { sendTaskCreatedEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +126,27 @@ export async function POST(req: Request) {
     });
     const actorName = creator?.full_name || creator?.email || "Unknown";
 
+    // 1. Retrieve the assignee details. Verify their existence before task creation.
+    const assignee = await prisma.user.findUnique({
+      where: { id: assignee_id },
+      select: { full_name: true, email: true },
+    });
+    if (!assignee) {
+      return NextResponse.json({ error: "Assignee not found" }, { status: 404 });
+    }
+
+    // 2. Fetch the workspace name if workspace_id is provided. Fallback to Personal Tasks if not.
+    let workspaceName = "Personal Tasks";
+    if (workspace_id) {
+      const ws = await prisma.workspace.findUnique({
+        where: { id: workspace_id },
+        select: { name: true },
+      });
+      if (ws) {
+        workspaceName = ws.name;
+      }
+    }
+
     const baseDeadline = max_deadline
       ? new Date(max_deadline)
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -188,6 +210,28 @@ export async function POST(req: Request) {
         });
       }
     }, { timeout: 30000 });
+
+    // 6. Send the assignment email. Check if email exists on assignee, and send a consolidated batch alert.
+    if (assignee.email) {
+      const emailTasks = tasksToCreate.map((t) => ({
+        title: t.title,
+        description: description || "",
+        deadline: t.deadline,
+        priority: priority || "Medium",
+        estimatedDays: estimated_days || 1,
+      }));
+
+      // Wrap async email call with catches to prevent unhandled rejection crashes.
+      sendTaskCreatedEmail({
+        toEmail: assignee.email,
+        toName: assignee.full_name || assignee.email.split("@")[0],
+        creatorName: actorName,
+        workspaceName,
+        taskDetails: emailTasks,
+      }).catch((err) => {
+        console.error("Async task created email notification failed:", err);
+      });
+    }
 
     return NextResponse.json(firstCreatedTask);
   } catch (error) {
@@ -283,15 +327,15 @@ export async function PATCH(req: Request) {
 
     // Status transition rules
     if (status !== undefined) {
-      const validStatuses = ["Todo", "In Progress", "In Review", "Completed", "Discarded"];
+      const validStatuses = ["Todo", "In Progress", "In Review", "Completed", "Not Done", "Discarded"];
       if (!validStatuses.includes(status)) {
         return NextResponse.json({ error: "Invalid status" }, { status: 400 });
       }
 
-      // Only Admin/Owner can move to Completed or Discarded (terminal states)
-      if ((status === "Completed" || status === "Discarded") && !isAdmin) {
+      // Only Admin/Owner can move to Completed, Not Done, or Discarded (terminal states)
+      if ((status === "Completed" || status === "Not Done" || status === "Discarded") && !isAdmin) {
         return NextResponse.json(
-          { error: "Only Admins and Owners can set Completed or Discarded status" },
+          { error: "Only Admins and Owners can set Completed, Not Done, or Discarded status" },
           { status: 403 }
         );
       }
@@ -309,22 +353,22 @@ export async function PATCH(req: Request) {
 
     // When a task is reverted from a terminal/review state, wipe stale timing data
     // so any subsequent completion is judged on fresh timing — not a stale review timestamp.
+    const terminalStatuses = ["Completed", "Not Done", "Discarded"];
+
     const revertResetData: Record<string, unknown> = {};
     if (status !== undefined && status !== currentTask.status) {
       if (
-        currentTask.status === "Completed" &&
-        status !== "Completed" &&
-        status !== "Discarded"
+        (currentTask.status === "Completed" || currentTask.status === "Not Done") &&
+        !terminalStatuses.includes(status)
       ) {
-        // Re-opening a completed task: clear all completion tracking
+        // Re-opening a completed/not-done task: clear all completion tracking
         revertResetData.completed_at = null;
         revertResetData.multiplier_earned = null;
         revertResetData.review_submitted_at = null;
       } else if (
         currentTask.status === "In Review" &&
         status !== "In Review" &&
-        status !== "Completed" &&
-        status !== "Discarded"
+        !terminalStatuses.includes(status)
       ) {
         // Sent back from review for rework: clear the review timestamp
         // so the next review submission is treated as a fresh attempt
@@ -337,7 +381,9 @@ export async function PATCH(req: Request) {
       ...(title !== undefined ? { title } : {}),
       ...(status !== undefined ? { status } : {}),
       ...(multiplier_earned !== undefined ? { multiplier_earned } : {}),
+      // Completed: multiplier calculated from timing; Not Done: explicit 0 (task closed but not performed)
       ...(status === "Completed" ? { completed_at: new Date() } : {}),
+      ...(status === "Not Done" ? { completed_at: new Date(), multiplier_earned: 0 } : {}),
       ...setReviewSubmittedAt,
       ...revertResetData,
       ...(description !== undefined ? { description } : {}),

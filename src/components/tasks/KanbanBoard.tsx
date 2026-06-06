@@ -49,6 +49,13 @@ const COLUMNS: {
     bgColor: "bg-green-50/30",
   },
   {
+    status: "Not Done",
+    label: "Not Done",
+    dotColor: "#dc2626",
+    headerColor: "text-red-600",
+    bgColor: "bg-red-50/20",
+  },
+  {
     status: "Discarded",
     label: "Discarded",
     dotColor: "#b0a9a2",
@@ -59,8 +66,8 @@ const COLUMNS: {
 
 export default function KanbanBoard({ tasks, members, onUpdate, onOpenPanel }: KanbanBoardProps) {
   return (
-    // 5-column grid on extra-large screens, collapsing on smaller viewports
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 items-start">
+    // 6-column grid on extra-large screens, collapsing on smaller viewports
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4 items-start">
       {COLUMNS.map((col) => {
         const colTasks = tasks.filter((t) => t.status === col.status);
 
