@@ -5,7 +5,12 @@ import { config } from "dotenv";
 // Load environment variables from .env.local
 config({ path: ".env.local" });
 
-const url = process.env.DATABASE_URL;
+// 1. Retrieve the database URL and credentials from the loaded configuration.
+// 2. Adjust relative database URL to target the correct database file path.
+let url = process.env.DATABASE_URL;
+if (url === "file:./dev.db" || url === "file:dev.db") {
+  url = "file:./prisma/dev.db";
+}
 const authToken = process.env.TURSO_AUTH_TOKEN;
 
 if (!url || !authToken) {
