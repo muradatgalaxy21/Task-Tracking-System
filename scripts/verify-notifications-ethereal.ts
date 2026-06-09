@@ -9,7 +9,7 @@ let lastSentMailInfo: any = null;
 // Spy on nodemailer.createTransport to capture SMTP send mail result
 const originalCreateTransport = nodemailer.createTransport;
 (nodemailer as any).createTransport = function (this: any, ...args: any[]) {
-  const transporter = originalCreateTransport.apply(this, args);
+  const transporter = (originalCreateTransport as any).apply(this, args);
   const originalSendMail = transporter.sendMail;
   transporter.sendMail = async function (this: any, mailOptions: any) {
     try {
