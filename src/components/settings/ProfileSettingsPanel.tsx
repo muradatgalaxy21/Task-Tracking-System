@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { upload } from "@vercel/blob/client";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { Loader2, Check, Camera, Trash2, X, AlertTriangle } from "lucide-react";
 import UserAvatar from "@/components/common/UserAvatar";
+import { validateFileForUpload } from "@/lib/upload";
 
 type ProfileData = {
   id: string;
@@ -202,32 +204,22 @@ export default function ProfileSettingsPanel() {
         type: "image/jpeg",
       });
 
-      const formData = new FormData();
-      formData.append("file", optimizedFile);
-
-      // 1. Send the file payload to the local upload API route.
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      // 2. Read response body as text first to avoid stream locking or double-read errors.
-      const responseText = await uploadRes.text();
-
-      // 3. Handle non-ok status codes by reading custom error JSON or falling back to raw text.
-      if (!uploadRes.ok) {
-        let errMsg = "Upload failed";
-        try {
-          const uploadData = JSON.parse(responseText);
-          errMsg = uploadData.error || errMsg;
-        } catch {
-          errMsg = responseText || errMsg;
-        }
-        throw new Error(errMsg);
+      // 2. Validate the optimized file locally for an immediate error before upload.
+      const validationError = validateFileForUpload(optimizedFile, "avatar");
+      if (validationError) {
+        throw new Error(validationError);
       }
 
-      // 4. Parse the success response from the text we already retrieved.
-      const { url } = JSON.parse(responseText);
+      // 3. Upload the bytes straight to Vercel Blob using a server-issued token.
+      //    The token is constrained to the avatar allowlist and size cap.
+      const blob = await upload(`avatars/${optimizedFile.name}`, optimizedFile, {
+        access: "public",
+        handleUploadUrl: "/api/upload",
+        clientPayload: JSON.stringify({ category: "avatar" }),
+      });
+
+      // 4. The returned cloud URL is what gets persisted on the user profile.
+      const url = blob.url;
 
       const patchRes = await fetch("/api/settings/profile", {
         method: "PATCH",

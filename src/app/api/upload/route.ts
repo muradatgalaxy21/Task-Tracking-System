@@ -1,61 +1,73 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
-import { randomUUID } from "crypto";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { requireAuth } from "@/lib/rbac";
+import { getUploadConstraints, type UploadCategory } from "@/lib/upload";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/upload - Handle file upload and store locally
- * 1. Receive multipart form data containing a file
- * 2. Extract and validate file presence
- * 3. Create absolute directory path for public/uploads
- * 4. Write file buffer to local disk with unique filename
- * 5. Return public asset URL path and metadata
+ * POST /api/upload
+ *
+ * Issues a short-lived, constrained client token so the browser can upload the
+ * file bytes directly to Vercel Blob. The file never passes through this
+ * function, which removes the serverless request body size limit and the
+ * timeouts that broke the previous local-disk implementation in production.
+ *
+ * The same route also receives the upload-completed callback from Vercel once a
+ * client upload finishes, which the SDK validates and acknowledges.
  */
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<NextResponse> {
+  // 1. Parse the SDK request body that drives token issuance or completion.
+  const body = (await req.json()) as HandleUploadBody;
+
   try {
-    // 1. Receive multipart form data containing the file
-    const formData = await req.formData();
-    const file = formData.get("file") as File;
+    const result = await handleUpload({
+      body,
+      request: req,
+      // onBeforeGenerateToken is the security boundary. It runs server-side
+      // before any token is minted, so authentication and constraints are
+      // applied here and cannot be bypassed by the client.
+      onBeforeGenerateToken: async (_pathname, clientPayload) => {
+        // 1. Reject unauthenticated callers before a token is generated.
+        const { error } = await requireAuth();
+        if (error) {
+          throw new Error("Unauthorized");
+        }
 
-    // 2. Validate file presence
-    if (!file) {
-      return NextResponse.json(
-        { error: "No file was selected for upload" },
-        { status: 400 }
-      );
-    }
+        // 2. Read the upload category the client declared. Default to the
+        //    most restrictive (avatar) profile when it is missing or invalid.
+        let category: UploadCategory = "avatar";
+        if (clientPayload) {
+          try {
+            const parsed = JSON.parse(clientPayload) as {
+              category?: UploadCategory;
+            };
+            if (parsed.category === "chat" || parsed.category === "avatar") {
+              category = parsed.category;
+            }
+          } catch {
+            // Malformed payload falls through to the avatar default.
+          }
+        }
 
-    // 3. Convert file contents to buffer
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-
-    // 4. Resolve absolute directory path inside uploads/ directory in the project root
-    const uploadDir = path.join(process.cwd(), "uploads");
-    await mkdir(uploadDir, { recursive: true });
-
-    // 5. Generate a unique safe filename and full local path
-    const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-    const uniqueFileName = `${randomUUID()}-${safeName}`;
-    const destinationPath = path.join(uploadDir, uniqueFileName);
-
-    // 6. Write file buffer to the file system
-    await writeFile(destinationPath, buffer);
-
-    // 7. Generate public access URL
-    const relativeUrl = `/uploads/${uniqueFileName}`;
-
-    return NextResponse.json({
-      url: relativeUrl,
-      name: file.name,
-      type: file.type,
+        // 3. Lock the token to the category allowlist and size cap, and add a
+        //    random suffix so concurrent uploads never overwrite each other.
+        const { allowedContentTypes, maximumSizeInBytes } =
+          getUploadConstraints(category);
+        return {
+          allowedContentTypes,
+          maximumSizeInBytes,
+          addRandomSuffix: true,
+        };
+      },
     });
+
+    return NextResponse.json(result);
   } catch (err) {
-    console.error("FILE_UPLOAD_ERROR", err);
-    return NextResponse.json(
-      { error: "Failed to upload file. Please try again." },
-      { status: 500 }
-    );
+    // handleUpload throws on auth failure, malformed bodies, and constraint
+    // violations. Map the auth case to 401 and everything else to 400.
+    const message = err instanceof Error ? err.message : "Upload failed";
+    const status = message === "Unauthorized" ? 401 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }

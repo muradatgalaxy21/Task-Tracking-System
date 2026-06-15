@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { upload } from "@vercel/blob/client";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import UserAvatar from "@/components/common/UserAvatar";
+import { validateFileForUpload } from "@/lib/upload";
 import {
   Send,
   Paperclip,
@@ -152,38 +154,32 @@ export default function ChatPage() {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      // 1. Post the multipart form file data to the local upload API route.
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      // 2. Fetch the response body as text once to avoid stream consumption issues.
-      const responseText = await res.text();
-
-      // 3. Process error responses using parsed JSON error field or the raw text payload.
-      if (!res.ok) {
-        let errMsg = "File upload failed";
-        try {
-          const uploadData = JSON.parse(responseText);
-          errMsg = uploadData.error || errMsg;
-        } catch {
-          errMsg = responseText || errMsg;
-        }
-        throw new Error(errMsg);
+      // 1. Validate the file locally so the user gets an immediate, clear error.
+      const validationError = validateFileForUpload(file, "chat");
+      if (validationError) {
+        throw new Error(validationError);
       }
 
-      // 4. Parse the successful upload metadata from the response text.
-      const data = JSON.parse(responseText);
+      // 2. Upload the bytes straight to Vercel Blob using a server-issued token.
+      //    Files are namespaced per workspace and the token is locked to the
+      //    chat allowlist and size cap.
+      const blob = await upload(
+        `chat/${activeWorkspace?.id ?? "unknown"}/${file.name}`,
+        file,
+        {
+          access: "public",
+          handleUploadUrl: "/api/upload",
+          clientPayload: JSON.stringify({ category: "chat" }),
+        }
+      );
+
+      // 3. Record the returned cloud URL as a pending attachment on the message.
       setAttachedFiles((prev) => [
         ...prev,
         {
-          name: data.name || file.name,
-          url: data.url,
-          type: file.type || "application/octet-stream",
+          name: file.name,
+          url: blob.url,
+          type: file.type || blob.contentType || "application/octet-stream",
         },
       ]);
     } catch (err: any) {
