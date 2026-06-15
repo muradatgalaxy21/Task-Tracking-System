@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, hasMinimumRole } from "@/lib/rbac";
-import {
-  calculateTPS,
-  calculateAS,
-  calculateTotalScore,
-  calculatePayouts,
-  countWeekdaysInMonth,
-} from "@/lib/calculations";
+import { calculatePayouts, countWeekdaysInMonth } from "@/lib/calculations";
+import { computeMemberScores } from "@/lib/monthly-close";
 
 export const dynamic = "force-dynamic";
 
@@ -102,46 +97,18 @@ export async function POST(req: Request) {
       include: { user: { select: { id: true, full_name: true, email: true } } },
     });
 
-    // Fetch all tasks assigned to workspace members for the target month
-    const startOfMonth = new Date(year, month, 1);
-    const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
+    // Resolve display names for the payout breakdown, keyed by user_id
+    const nameByUserId = new Map(
+      members.map((m) => [m.user_id, m.user.full_name ?? m.user.email ?? "Unknown"])
+    );
 
-    const allTasks = await prisma.taskLedger.findMany({
-      where: {
-        workspace_id: workspaceId,
-        assignee_id: { in: members.map((m) => m.user_id) },
-      },
-    });
-
-    // Fetch attendance records for all members in the target month
-    const allAttendance = await prisma.dailyAttendance.findMany({
-      where: {
-        user_id: { in: members.map((m) => m.user_id) },
-        date: { gte: startOfMonth, lte: endOfMonth },
-      },
-    });
-
-    // Calculate score per member
-    const memberScores = members.map((m) => {
-      const memberTasks = allTasks.filter((t) => t.assignee_id === m.user_id);
-      const memberAttendance = allAttendance.filter((a) => a.user_id === m.user_id);
-
-      // Cast tasks to the type expected by calculateTPS (safe — same fields)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tpsResult = calculateTPS(memberTasks as any, year, month);
-      const asScore = calculateAS(memberAttendance as any, year, month, computedScheduledDays);
-      const totalScore = calculateTotalScore(tpsResult.score, asScore);
-
-      const presentDays = memberAttendance.filter((a) => a.status === "Present").length;
-
-      return {
-        userId: m.user_id,
-        userName: m.user.full_name ?? m.user.email ?? "Unknown",
-        tpsScore: tpsResult.score,
-        asScore,
-        totalScore,
-        presentDays,
-      };
+    // Compute TPS/AS/total per member via the shared aggregation (batched, timezone-safe)
+    const memberScores = await computeMemberScores({
+      workspaceId,
+      memberIds: members.map((m) => m.user_id),
+      year,
+      month,
+      scheduledDays: computedScheduledDays,
     });
 
     // Calculate payouts based on provided revenue (may be 0 for draft)
@@ -149,7 +116,7 @@ export async function POST(req: Request) {
     const payoutResults = calculatePayouts(
       memberScores.map((ms) => ({
         memberId: ms.userId,
-        memberName: ms.userName,
+        memberName: nameByUserId.get(ms.userId) ?? "Unknown",
         totalScore: ms.totalScore,
       })),
       revenue

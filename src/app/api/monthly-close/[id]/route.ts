@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole, hasMinimumRole } from "@/lib/rbac";
-import {
-  calculateTPS,
-  calculateAS,
-  calculateTotalScore,
-  calculatePayouts,
-} from "@/lib/calculations";
+import { calculatePayouts } from "@/lib/calculations";
+import { computeMemberScores } from "@/lib/monthly-close";
 
 export const dynamic = "force-dynamic";
 
@@ -124,97 +121,69 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // Merge existing per-member overrides with any new ones from the request
     const globalOverrides: Record<string, number> = multiplierOverrides ?? {};
 
-    // Fetch tasks and attendance for the closed month to recompute scores
     const { month, year, workspace_id } = close;
-    const startOfMonth = new Date(year, month, 1);
-    const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
-
     const memberIds = close.payouts.map((p) => p.user_id);
 
-    const allTasks = await prisma.taskLedger.findMany({
-      where: { workspace_id, assignee_id: { in: memberIds } },
-    });
-
-    const allAttendance = await prisma.dailyAttendance.findMany({
-      where: {
-        user_id: { in: memberIds },
-        date: { gte: startOfMonth, lte: endOfMonth },
-      },
-    });
-
-    const users = await prisma.user.findMany({
-      where: { id: { in: memberIds } },
-      select: { id: true, full_name: true, email: true },
-    });
-
-    // Recompute per member, applying multiplier overrides non-destructively
-    const memberScores = close.payouts.map((p) => {
-      // Merge stored per-payout overrides with the incoming global overrides
+    // Build per-user merged overrides (stored per-payout overrides + incoming global ones)
+    // and an index from user_id back to the payout row we must update.
+    const overridesByUser: Record<string, Record<string, number>> = {};
+    const payoutByUserId = new Map<string, (typeof close.payouts)[number]>();
+    for (const p of close.payouts) {
       let storedOverrides: Record<string, number> = {};
       try {
         storedOverrides = JSON.parse(p.multiplier_overrides || "{}");
       } catch {
         storedOverrides = {};
       }
-      const mergedOverrides = { ...storedOverrides, ...globalOverrides };
+      overridesByUser[p.user_id] = { ...storedOverrides, ...globalOverrides };
+      payoutByUserId.set(p.user_id, p);
+    }
 
-      const memberTasks = allTasks
-        .filter((t) => t.assignee_id === p.user_id)
-        // Apply multiplier overrides: if a task has an override, use it
-        .map((t) => ({
-          ...t,
-          multiplier_earned:
-            mergedOverrides[t.task_id] != null
-              ? mergedOverrides[t.task_id]
-              : t.multiplier_earned,
-        }));
+    // Resolve display names for the payout breakdown, keyed by user_id
+    const users = await prisma.user.findMany({
+      where: { id: { in: memberIds } },
+      select: { id: true, full_name: true, email: true },
+    });
+    const nameByUserId = new Map(
+      users.map((u) => [u.id, u.full_name ?? u.email ?? "Unknown"])
+    );
 
-      const memberAttendance = allAttendance.filter((a) => a.user_id === p.user_id);
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tpsResult = calculateTPS(memberTasks as any, year, month);
-      const asScore = calculateAS(
-        memberAttendance as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        year,
-        month,
-        newScheduledDays
-      );
-      const totalScore = calculateTotalScore(tpsResult.score, asScore);
-      const presentDays = memberAttendance.filter((a) => a.status === "Present").length;
-      const user = users.find((u) => u.id === p.user_id);
-
-      return {
-        payoutId: p.id,
-        userId: p.user_id,
-        userName: user?.full_name ?? user?.email ?? "Unknown",
-        tpsScore: tpsResult.score,
-        asScore,
-        totalScore,
-        presentDays,
-        mergedOverrides,
-      };
+    // Recompute TPS/AS/total per member via the shared aggregation (batched, timezone-safe),
+    // applying the merged multiplier overrides non-destructively
+    const memberScores = await computeMemberScores({
+      workspaceId: workspace_id,
+      memberIds,
+      year,
+      month,
+      scheduledDays: newScheduledDays,
+      overridesByUser,
     });
 
     const payoutResults = calculatePayouts(
       memberScores.map((ms) => ({
         memberId: ms.userId,
-        memberName: ms.userName,
+        memberName: nameByUserId.get(ms.userId) ?? "Unknown",
         totalScore: ms.totalScore,
       })),
       newRevenue
     );
 
-    // Persist updated payout records and close metadata in a transaction
-    await prisma.$transaction(async (tx) => {
-      await tx.monthlyClose.update({
+    // Persist the close metadata and every updated payout in a single batched
+    // transaction (array form) rather than one awaited update per member
+    const writes: Prisma.PrismaPromise<unknown>[] = [
+      prisma.monthlyClose.update({
         where: { id },
         data: { total_revenue: newRevenue, scheduled_days: newScheduledDays },
-      });
+      }),
+    ];
 
-      for (const ms of memberScores) {
-        const payout = payoutResults.find((p) => p.memberId === ms.userId);
-        await tx.memberMonthlyPayout.update({
-          where: { id: ms.payoutId },
+    for (const ms of memberScores) {
+      const payoutRow = payoutByUserId.get(ms.userId);
+      if (!payoutRow) continue;
+      const payout = payoutResults.find((p) => p.memberId === ms.userId);
+      writes.push(
+        prisma.memberMonthlyPayout.update({
+          where: { id: payoutRow.id },
           data: {
             tps_score: ms.tpsScore,
             as_score: ms.asScore,
@@ -224,11 +193,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             final_payout: payout?.finalPayout ?? 0,
             present_days: ms.presentDays,
             scheduled_days: newScheduledDays,
-            multiplier_overrides: JSON.stringify(ms.mergedOverrides),
+            multiplier_overrides: JSON.stringify(overridesByUser[ms.userId] ?? {}),
           },
-        });
-      }
-    });
+        })
+      );
+    }
+
+    await prisma.$transaction(writes);
 
     return NextResponse.json({ success: true });
   } catch (err) {

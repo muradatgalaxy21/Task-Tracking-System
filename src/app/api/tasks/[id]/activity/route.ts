@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { sendMentionEmail } from "@/lib/email";
 import { writeAuditLog } from "@/lib/audit";
 
@@ -157,16 +157,20 @@ async function processMentions({
     })),
   });
 
-  // Emails are sent individually — no batch send API available
-  for (const user of mentioned) {
-    if (user.email) {
-      await sendMentionEmail({
-        toEmail: user.email,
-        toName: user.full_name || user.email.split("@")[0],
-        fromName: actorName,
-        taskTitle: task.title,
-        commentPreview: content.slice(0, 200),
-      });
+  // Send mention emails after the response is returned so Resend calls never delay
+  // the comment save. Emails are sent individually — no batch send API available.
+  // sendMentionEmail logs and swallows its own errors.
+  after(async () => {
+    for (const user of mentioned) {
+      if (user.email) {
+        await sendMentionEmail({
+          toEmail: user.email,
+          toName: user.full_name || user.email.split("@")[0],
+          fromName: actorName,
+          taskTitle: task.title,
+          commentPreview: content.slice(0, 200),
+        });
+      }
     }
-  }
+  });
 }

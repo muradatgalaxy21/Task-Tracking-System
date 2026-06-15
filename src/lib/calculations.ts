@@ -250,6 +250,23 @@ export function getActiveDaysInMonth(
   return activeDates.size;
 }
 
+// Counts a member's 'Present' days within the target month.
+// Slice the ISO prefix directly to avoid timezone-shift bugs with new Date() —
+// this is the canonical present-day count used by both calculateAS and the
+// MonthlyClose aggregation, so a widened DB query window is filtered precisely here.
+export function countPresentDaysInMonth(
+  attendanceRecords: DailyAttendance[],
+  year: number,
+  month: number // 0-indexed
+): number {
+  return attendanceRecords.filter((record) => {
+    if (record.status !== "Present") return false;
+    const s = typeof record.date === "string" ? record.date : (record.date as unknown as Date).toISOString();
+    const [yr, mo] = s.slice(0, 10).split("-").map(Number);
+    return yr === year && mo - 1 === month;
+  }).length;
+}
+
 export function calculateAS(
   attendanceRecords: DailyAttendance[],
   targetYear?: number,
@@ -260,14 +277,8 @@ export function calculateAS(
   const year = targetYear ?? now.getFullYear();
   const month = targetMonth ?? now.getMonth();
 
-  // Count only 'Present' records for this member within the target month.
-  // Slice ISO prefix directly to avoid timezone-shift bugs with new Date().
-  const presentDays = attendanceRecords.filter((record) => {
-    if (record.status !== "Present") return false;
-    const s = typeof record.date === "string" ? record.date : (record.date as unknown as Date).toISOString();
-    const [yr, mo] = s.slice(0, 10).split("-").map(Number);
-    return yr === year && mo - 1 === month;
-  }).length;
+  // Count only 'Present' records for this member within the target month
+  const presentDays = countPresentDaysInMonth(attendanceRecords, year, month);
 
   // Guard against division by zero if no one has come in yet this month
   if (!scheduledDays || scheduledDays === 0) return 0;
