@@ -1,25 +1,9 @@
 // Shared email helpers — server-only. Never import from client components.
 
-import nodemailer from "nodemailer";
-
-function createTransporter() {
-  const port = Number(process.env.SMTP_PORT) || 587;
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port,
-    secure: port === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-    tls: {
-      rejectUnauthorized: false,
-    },
-  });
-}
+import { resend, buildFrom, isEmailConfigured } from "@/lib/resend";
 
 // Sends an email to a user who was @mentioned in a task comment.
-// Logs and swallows errors so a broken SMTP config never blocks the comment from saving.
+// Logs and swallows errors so a Resend outage never blocks the comment from saving.
 export async function sendMentionEmail({
   toEmail,
   toName,
@@ -35,11 +19,14 @@ export async function sendMentionEmail({
 }) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-  try {
-    const transporter = createTransporter();
+  if (!isEmailConfigured()) {
+    console.log(`[MENTION] ${fromName} mentioned ${toEmail} in "${taskTitle}"`);
+    return;
+  }
 
-    await transporter.sendMail({
-      from: `"AI & Beyond" <${process.env.SMTP_USER}>`,
+  try {
+    const { error } = await resend.emails.send({
+      from: buildFrom("AI & Beyond"),
       to: toEmail,
       subject: `${fromName} mentioned you in "${taskTitle}"`,
       html: `
@@ -75,13 +62,16 @@ export async function sendMentionEmail({
 </html>
       `,
     });
+    if (error) {
+      console.error("sendMentionEmail failed:", error);
+    }
   } catch (err) {
     console.error("sendMentionEmail failed:", err);
   }
 }
 
 // Sends a re-verification email when an Admin or Owner modifies their profile.
-// If SMTP is not configured, prints the link to the server console as a dev fallback.
+// If Resend is not configured, prints the link to the server console as a dev fallback.
 export async function sendProfileVerificationEmail({
   toEmail,
   toName,
@@ -91,18 +81,14 @@ export async function sendProfileVerificationEmail({
   toName: string;
   verifyUrl: string;
 }) {
-  const smtpConfigured =
-    process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
-
-  if (!smtpConfigured) {
+  if (!isEmailConfigured()) {
     console.log(`[PROFILE VERIFY] Link for ${toEmail}: ${verifyUrl}`);
     return;
   }
 
   try {
-    const transporter = createTransporter();
-    await transporter.sendMail({
-      from: `"AI & Beyond" <${process.env.SMTP_USER}>`,
+    const { error } = await resend.emails.send({
+      from: buildFrom("AI & Beyond"),
       to: toEmail,
       subject: "Confirm your profile update — AI and Beyond",
       html: `
@@ -142,13 +128,16 @@ export async function sendProfileVerificationEmail({
 </html>
       `,
     });
+    if (error) {
+      console.error("sendProfileVerificationEmail failed:", error);
+    }
   } catch (err) {
     console.error("sendProfileVerificationEmail failed:", err);
   }
 }
 
 // Sends an account deletion verification email.
-// If SMTP is not configured, prints the link to the server console as a dev fallback.
+// If Resend is not configured, prints the link to the server console as a dev fallback.
 export async function sendAccountDeletionVerificationEmail({
   toEmail,
   toName,
@@ -158,18 +147,14 @@ export async function sendAccountDeletionVerificationEmail({
   toName: string;
   verifyUrl: string;
 }) {
-  const smtpConfigured =
-    process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
-
-  if (!smtpConfigured) {
+  if (!isEmailConfigured()) {
     console.log(`[ACCOUNT DELETION] Verification link for ${toEmail}: ${verifyUrl}`);
     return;
   }
 
   try {
-    const transporter = createTransporter();
-    await transporter.sendMail({
-      from: `"AI & Beyond Security" <${process.env.SMTP_USER}>`,
+    const { error } = await resend.emails.send({
+      from: buildFrom("AI & Beyond Security"),
       to: toEmail,
       subject: "Confirm your account deletion — AI and Beyond",
       html: `
@@ -208,6 +193,9 @@ export async function sendAccountDeletionVerificationEmail({
 </html>
       `,
     });
+    if (error) {
+      console.error("sendAccountDeletionVerificationEmail failed:", error);
+    }
   } catch (err) {
     console.error("sendAccountDeletionVerificationEmail failed:", err);
   }
@@ -234,11 +222,8 @@ export async function sendTaskCreatedEmail({
     estimatedDays?: number;
   }[];
 }) {
-  // 1. Verify SMTP server configurations. If credentials are not present, log fallback details to server console.
-  const smtpConfigured =
-    process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
-
-  if (!smtpConfigured) {
+  // 1. Verify Resend is configured. If not, log fallback details to the server console.
+  if (!isEmailConfigured()) {
     console.log(`[TASK CREATED] Mock email to ${toEmail} (${toName}):`);
     console.log(`Creator: ${creatorName}, Workspace: ${workspaceName}`);
     console.log("Tasks created:", JSON.stringify(taskDetails, null, 2));
@@ -281,12 +266,11 @@ export async function sendTaskCreatedEmail({
       })
       .join("");
 
-    // 3. Setup nodemailer client instance and send the generated HTML email message body.
-    const transporter = createTransporter();
+    // 3. Send the generated HTML email message body via the shared Resend client.
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-    await transporter.sendMail({
-      from: `"AI & Beyond Planner" <${process.env.SMTP_USER}>`,
+    const { error } = await resend.emails.send({
+      from: buildFrom("AI & Beyond Planner"),
       to: toEmail,
       subject,
       html: `
@@ -325,8 +309,11 @@ export async function sendTaskCreatedEmail({
 </html>
       `,
     });
+    if (error) {
+      // 4. Log detailed Resend errors to the console instead of throwing up so execution doesn't halt.
+      console.error("sendTaskCreatedEmail failed:", error);
+    }
   } catch (err) {
-    // 4. Log detailed SMTP errors to the console instead of throwing up so execution doesn't halt.
     console.error("sendTaskCreatedEmail failed:", err);
   }
 }
@@ -346,17 +333,13 @@ export async function sendDeadlineApproachingEmail({
   deadline: Date;
   priority?: string;
 }) {
-  // 1. Verify SMTP credentials availability. If not present, log fallback warning to server console.
-  const smtpConfigured =
-    process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS;
-
-  if (!smtpConfigured) {
+  // 1. Verify Resend is configured. If not, log a fallback warning to the server console.
+  if (!isEmailConfigured()) {
     console.log(`[DEADLINE ALERT MOCK] Task: "${taskTitle}" is due soon for ${toEmail}`);
     return;
   }
 
   try {
-    const transporter = createTransporter();
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const priorityColor =
       priority === "High"
@@ -366,8 +349,8 @@ export async function sendDeadlineApproachingEmail({
         : "#10b981";
 
     // 2. Dispatch the warning alert email to the assignee about the imminent deadline.
-    await transporter.sendMail({
-      from: `"AI & Beyond Coordinator" <${process.env.SMTP_USER}>`,
+    const { error } = await resend.emails.send({
+      from: buildFrom("AI & Beyond Coordinator"),
       to: toEmail,
       subject: `Urgent: Deadline Approaching for "${taskTitle}"`,
       html: `
@@ -424,8 +407,11 @@ export async function sendDeadlineApproachingEmail({
 </html>
       `,
     });
+    if (error) {
+      // 3. Handle errors and log descriptions of failures cleanly without throwing.
+      console.error("sendDeadlineApproachingEmail failed:", error);
+    }
   } catch (err) {
-    // 3. Handle errors and log descriptions of failures cleanly without throwing.
     console.error("sendDeadlineApproachingEmail failed:", err);
   }
 }
