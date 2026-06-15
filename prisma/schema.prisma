@@ -141,6 +141,13 @@ model TaskLedger {
   assignee        User           @relation(fields: [assignee_id], references: [id], onDelete: Cascade)
   sub_tasks       SubTask[]
   activities      TaskActivity[]
+
+  // Kanban/list views filter by workspace and status
+  @@index([workspace_id, status])
+  // Monthly close and member history aggregate completed tasks per assignee within a workspace
+  @@index([workspace_id, assignee_id])
+  // Deadline-alert cron scans non-terminal tasks ordered by deadline
+  @@index([status, max_deadline])
 }
 
 model TaskActivity {
@@ -178,6 +185,8 @@ model DailyAttendance {
   user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@unique([user_id, date])
+  // Admin attendance log and cron jobs filter by date alone across all users
+  @@index([date])
 }
 
 model Notification {
@@ -320,4 +329,9 @@ model MemberMonthlyPayout {
   created_at   DateTime @default(now())
 
   monthly_close MonthlyClose @relation(fields: [close_id], references: [id], onDelete: Cascade)
+
+  // Per-user payout balance lookup within a close
+  @@index([close_id, user_id])
+  // User history page aggregates a member's finalized payouts within a workspace
+  @@index([workspace_id, user_id])
 }

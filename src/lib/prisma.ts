@@ -1,8 +1,10 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSQL } from "@prisma/adapter-libsql";
 
-// globalThis persists across Next.js hot-reloads in dev, preventing multiple PrismaClient instances
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
+// globalThis persists across Next.js hot-reloads in dev AND across invocations
+// on a warm serverless instance in production, preventing multiple PrismaClient
+// instances (and the underlying libsql connections they each open).
+const globalForPrisma = global as unknown as { prisma?: PrismaClient };
 
 // 1. Retrieve the database URL from the environment configuration.
 // 2. Map relative SQLite database URLs to the prisma directory to match Prisma CLI's resolution.
@@ -15,12 +17,11 @@ if (databaseUrl === "file:./dev.db" || databaseUrl === "file:dev.db") {
 // Pass config object directly — avoids the separate createClient import and resolves the type mismatch on Vercel
 const adapter = new PrismaLibSQL({
   url: databaseUrl,
-  authToken: process.env.TURSO_AUTH_TOKEN!,
+  authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
-export const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({ adapter });
-
-// Cache the instance on globalThis in development to prevent multiple clients on hot-reload
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+// Reuse the cached client across hot-reloads and warm invocations in every
+// environment. Without this, each warm serverless instance would open a new
+// libsql connection per request once traffic grows.
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
+globalForPrisma.prisma = prisma;
