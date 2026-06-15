@@ -1,13 +1,14 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { TaskLedger } from "@prisma/client";
 import { hasMinimumRole } from "@/lib/rbac";
 import { resolveEffectiveRole } from "@/lib/rbac-utils";
 import { STATUS_LABELS } from "@/lib/types";
 import { writeAuditLog } from "@/lib/audit";
 import { sendTaskCreatedEmail } from "@/lib/email";
+import { getCachedWorkspaceTasks, revalidateWorkspaceTasks } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -40,18 +41,8 @@ export async function GET(req: Request) {
   }
 
   try {
-    const tasks = await prisma.taskLedger.findMany({
-      where: {
-        workspace_id,
-        ...(status ? { status } : {}),
-      },
-      include: {
-        assignee: { select: { id: true, full_name: true, email: true } },
-        // Only the three fields consumed by TaskCard, TaskTableRow, and TaskDetailPanel
-        sub_tasks: { select: { id: true, title: true, status: true } },
-      },
-      orderBy: { created_at: "desc" },
-    });
+    // Served from the Data Cache and busted on any task mutation in this workspace
+    const tasks = await getCachedWorkspaceTasks(workspace_id, status ?? undefined);
 
     return NextResponse.json(tasks);
   } catch (error) {
@@ -211,8 +202,12 @@ export async function POST(req: Request) {
       }
     }, { timeout: 30000 });
 
+    // Bust the cached task list so the new task shows on the next fetch
+    if (workspace_id) revalidateWorkspaceTasks(workspace_id);
+
     // 6. Send the assignment email. Check if email exists on assignee, and send a consolidated batch alert.
-    if (assignee.email) {
+    const assigneeEmail = assignee.email;
+    if (assigneeEmail) {
       const emailTasks = tasksToCreate.map((t) => ({
         title: t.title,
         description: description || "",
@@ -221,16 +216,17 @@ export async function POST(req: Request) {
         estimatedDays: estimated_days || 1,
       }));
 
-      // Wrap async email call with catches to prevent unhandled rejection crashes.
-      sendTaskCreatedEmail({
-        toEmail: assignee.email,
-        toName: assignee.full_name || assignee.email.split("@")[0],
-        creatorName: actorName,
-        workspaceName,
-        taskDetails: emailTasks,
-      }).catch((err) => {
-        console.error("Async task created email notification failed:", err);
-      });
+      // Send after the response is returned so the Resend call never delays task creation.
+      // sendTaskCreatedEmail logs and swallows its own errors.
+      after(() =>
+        sendTaskCreatedEmail({
+          toEmail: assigneeEmail,
+          toName: assignee.full_name || assigneeEmail.split("@")[0],
+          creatorName: actorName,
+          workspaceName,
+          taskDetails: emailTasks,
+        })
+      );
     }
 
     return NextResponse.json(firstCreatedTask);
@@ -455,6 +451,9 @@ export async function PATCH(req: Request) {
       });
     }
 
+    // Bust the cached task list so the edit shows on the next fetch
+    if (currentTask.workspace_id) revalidateWorkspaceTasks(currentTask.workspace_id);
+
     return NextResponse.json(updatedTask);
   } catch (error) {
     console.error("Failed to update task:", error);
@@ -528,6 +527,9 @@ export async function DELETE(req: Request) {
       entity_id: id,
       entity_name: task.title,
     });
+
+    // Bust the cached task list so the deletion shows on the next fetch
+    if (task.workspace_id) revalidateWorkspaceTasks(task.workspace_id);
 
     return NextResponse.json({ success: true });
   } catch (error) {

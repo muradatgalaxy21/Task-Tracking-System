@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { revalidateMembers } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,9 @@ export async function GET(req: Request) {
       }),
       prisma.profileVerificationToken.delete({ where: { token } }),
     ]);
+
+    // Bust cached member lists so the verified name change shows in member/partner views
+    revalidateMembers();
 
     return NextResponse.redirect(`${settingsUrl}?verify=success`);
   } catch (err) {

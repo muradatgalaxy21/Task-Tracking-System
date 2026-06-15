@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasMinimumRole, resolveEffectiveRole } from "@/lib/rbac-utils";
+import { revalidateMembers } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,9 @@ export async function DELETE(
     await prisma.workspaceMember.delete({
       where: { workspace_id_user_id: { workspace_id: workspaceId, user_id: targetUserId } },
     });
+
+    // Bust cached member lists so the removed member disappears from member/partner views
+    revalidateMembers();
 
     return NextResponse.json({ success: true });
   } catch (err) {

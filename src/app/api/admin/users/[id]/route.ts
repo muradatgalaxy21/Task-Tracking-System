@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/rbac";
+import { invalidateRoleCache } from "@/lib/role-cache";
+import { revalidateMembers } from "@/lib/cache";
 
 const VALID_ROLES = ["Owner", "Admin", "Manager", "Member", "Guest"] as const;
 type ValidRole = (typeof VALID_ROLES)[number];
@@ -26,6 +28,13 @@ export async function PATCH(
       data: { role },
       select: { id: true, email: true, role: true },
     });
+
+    // Clear the cached role immediately so the new permission level applies
+    // on this instance without waiting for the cache TTL to expire.
+    invalidateRoleCache(id);
+
+    // Bust cached member lists so the new role shows in member/partner views
+    revalidateMembers();
 
     return NextResponse.json(user);
   } catch (err) {

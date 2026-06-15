@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasMinimumRole } from "@/lib/rbac-utils";
 import { sendProfileVerificationEmail } from "@/lib/email";
+import { revalidateMembers } from "@/lib/cache";
 import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +46,8 @@ export async function PATCH(req: Request) {
         where: { id: session.user.id },
         data: { image: image ? image.trim() : null },
       });
+      // Bust cached member lists so the new avatar shows in member/partner views
+      revalidateMembers();
     }
 
     // Fetch user to check current role and compare name
@@ -102,6 +105,9 @@ export async function PATCH(req: Request) {
       data: { full_name: full_name.trim() },
       select: { id: true, full_name: true, email: true, role: true, image: true },
     });
+
+    // Bust cached member lists so the new name shows in member/partner views
+    revalidateMembers();
 
     return NextResponse.json({ success: true, user: updated });
   } catch (err) {

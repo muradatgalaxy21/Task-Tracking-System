@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { getCachedWorkspaceMembers, getCachedAllMembers } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -29,27 +30,14 @@ export async function GET(req: Request) {
       return NextResponse.json(member);
     }
 
-    // Workspace-scoped member list: includes workspace_role alongside the user fields
+    // Workspace-scoped member list: includes workspace_role alongside the user fields.
+    // Served from the Data Cache and busted on any member write (see revalidateMembers).
     if (workspace_id) {
-      const memberships = await prisma.workspaceMember.findMany({
-        where: { workspace_id },
-        include: {
-          user: { select: { id: true, full_name: true, email: true, role: true, image: true } },
-        },
-        orderBy: { joined_at: "asc" },
-      });
-      return NextResponse.json(
-        memberships.map((m) => ({ ...m.user, workspace_role: m.role }))
-      );
+      return NextResponse.json(await getCachedWorkspaceMembers(workspace_id));
     }
 
     // Unscoped fallback: return all users (kept for admin screens that do not operate per-workspace)
-    const members = await prisma.user.findMany({
-      select: { id: true, full_name: true, email: true, role: true, image: true },
-      orderBy: { full_name: "asc" },
-    });
-
-    return NextResponse.json(members);
+    return NextResponse.json(await getCachedAllMembers());
   } catch (error) {
     console.error("Failed to fetch members:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

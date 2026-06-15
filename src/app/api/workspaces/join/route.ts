@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/rbac";
+import { revalidateMembers } from "@/lib/cache";
 
 // POST /api/workspaces/join - Join an existing workspace using an invite code
 export async function POST(req: Request) {
@@ -73,6 +74,9 @@ export async function POST(req: Request) {
           }),
         ]);
 
+        // Bust cached member lists so the new member shows in member/partner views
+        revalidateMembers();
+
         const workspace = await prisma.workspace.findUnique({
           where: { id: invitation.workspace_id },
         });
@@ -139,6 +143,9 @@ export async function POST(req: Request) {
         data: { workspace_id: workspaceLower.id, user_id: userId, role: "Member" },
       });
 
+      // Bust cached member lists so the new member shows in member/partner views
+      revalidateMembers();
+
       return NextResponse.json({ workspace: workspaceLower, status: "joined" });
     }
 
@@ -158,6 +165,9 @@ export async function POST(req: Request) {
     await prisma.workspaceMember.create({
       data: { workspace_id: workspace.id, user_id: userId, role: "Member" },
     });
+
+    // Bust cached member lists so the new member shows in member/partner views
+    revalidateMembers();
 
     return NextResponse.json({ workspace, status: "joined" });
   } catch (err) {

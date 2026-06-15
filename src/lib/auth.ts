@@ -7,24 +7,64 @@ import bcrypt from "bcryptjs";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
+import { getCachedRole } from "@/lib/role-cache";
+import { resend, buildFrom, isEmailConfigured } from "@/lib/resend";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
     EmailProvider({
-      server: {
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT),
-        secure: Number(process.env.SMTP_PORT) === 465,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-        tls: {
-          rejectUnauthorized: false,
-        },
+      from: buildFrom("AI & Beyond"),
+      // Sends the magic-link sign-in email via the shared Resend client instead of an
+      // SMTP transporter, removing the socket-timeout failures that broke this flow
+      // in serverless. Falls back to logging the link when Resend is not configured.
+      sendVerificationRequest: async ({ identifier, url }) => {
+        if (!isEmailConfigured()) {
+          console.log(`[MAGIC LINK] Sign-in link for ${identifier}: ${url}`);
+          return;
+        }
+
+        const { error } = await resend.emails.send({
+          from: buildFrom("AI & Beyond"),
+          to: identifier,
+          subject: "Sign in to AI and Beyond",
+          html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: 'Inter', Arial, sans-serif; background: #fafaf9; margin: 0; padding: 40px 20px;">
+  <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e7e5e4; overflow: hidden;">
+    <div style="background: #4f46e5; padding: 20px 28px;">
+      <p style="color: white; font-size: 13px; font-weight: 700; letter-spacing: 1px; margin: 0; text-transform: uppercase;">AI & Beyond</p>
+    </div>
+    <div style="padding: 28px;">
+      <p style="font-size: 15px; color: #292524; margin: 0 0 20px;">
+        Click the button below to sign in to AI and Beyond. This link expires shortly and can only be used once.
+      </p>
+      <a href="${url}"
+         style="display: inline-block; padding: 11px 22px; background: #4f46e5; color: white; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">
+        Sign in
+      </a>
+      <p style="font-size: 11px; color: #a8a29e; margin: 24px 0 0;">
+        If you did not request this email, you can safely ignore it.
+      </p>
+    </div>
+    <div style="padding: 14px 28px; border-top: 1px solid #e7e5e4;">
+      <p style="font-size: 11px; color: #a8a29e; margin: 0;">AI & Beyond internal platform — automated notification</p>
+    </div>
+  </div>
+</body>
+</html>
+          `,
+        });
+
+        if (error) {
+          throw new Error(`Resend failed to send magic link: ${error.message}`);
+        }
       },
-      from: process.env.SMTP_USER,
     }),
 
     CredentialsProvider({
@@ -121,16 +161,16 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.sub;
         session.user.full_name = token.full_name;
 
-        // Always fetch role fresh to prevent stale permission data in long-lived tokens
-        // 1. Fetch user role from database.
+        // Fetch the role through a short-TTL cache to avoid a DB round trip on
+        // every page load, while still picking up role changes within seconds
+        // (see invalidateRoleCache in admin/users/[id]/route.ts for the
+        // immediate-update path).
+        // 1. Fetch user role from cache or database.
         // 2. Assign role to user session for access control checks.
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.sub! },
-          select: { role: true },
-        });
+        const role = await getCachedRole(token.sub!);
 
-        if (dbUser) {
-          session.user.role = dbUser.role;
+        if (role) {
+          session.user.role = role;
         }
       }
       return session;
