@@ -8,7 +8,7 @@ import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
 import { getCachedRole } from "@/lib/role-cache";
-import { resend, buildFrom, isEmailConfigured } from "@/lib/resend";
+import { getResend, buildFrom, isEmailConfigured } from "@/lib/resend";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -24,7 +24,7 @@ export const authOptions: NextAuthOptions = {
           return;
         }
 
-        const { error } = await resend.emails.send({
+        const { error } = await getResend().emails.send({
           from: buildFrom("AI & Beyond"),
           to: identifier,
           subject: "Sign in to AI and Beyond",

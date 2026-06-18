@@ -12,8 +12,17 @@ import { Resend } from "resend";
 // in src/lib/prisma.ts.
 const globalForResend = global as unknown as { resend?: Resend };
 
-export const resend = globalForResend.resend ?? new Resend(process.env.RESEND_API_KEY);
-globalForResend.resend = resend;
+// Construct the client lazily, not at module load. The Resend SDK throws
+// "Missing API key" in its constructor when RESEND_API_KEY is unset, and Next.js
+// imports every route module during the build's page-data collection — eager
+// construction would crash the build whenever the key is absent. Callers always
+// gate sends behind isEmailConfigured(), so this only runs when the key exists.
+export function getResend(): Resend {
+  if (!globalForResend.resend) {
+    globalForResend.resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return globalForResend.resend;
+}
 
 // Verified sending domain/address, e.g. "notifications@yourdomain.com".
 // Falls back to Resend's shared sandbox address so local dev works without

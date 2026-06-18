@@ -1,4 +1,4 @@
-import { resend, buildFrom, isEmailConfigured } from "@/lib/resend";
+import { getResend, buildFrom, isEmailConfigured } from "@/lib/resend";
 
 // Sends a password reset email.
 // If Resend is not configured, the link is printed to the server console (dev fallback).
@@ -11,7 +11,7 @@ export async function sendPasswordResetEmail(email: string, resetUrl: string) {
   }
 
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: buildFrom("AI & Beyond"),
       to: email,
       subject: "Reset your password - AI and Beyond",

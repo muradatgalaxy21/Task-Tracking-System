@@ -1,6 +1,6 @@
 // Shared email helpers — server-only. Never import from client components.
 
-import { resend, buildFrom, isEmailConfigured } from "@/lib/resend";
+import { getResend, buildFrom, isEmailConfigured } from "@/lib/resend";
 
 // Sends an email to a user who was @mentioned in a task comment.
 // Logs and swallows errors so a Resend outage never blocks the comment from saving.
@@ -25,7 +25,7 @@ export async function sendMentionEmail({
   }
 
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: buildFrom("AI & Beyond"),
       to: toEmail,
       subject: `${fromName} mentioned you in "${taskTitle}"`,
@@ -87,7 +87,7 @@ export async function sendProfileVerificationEmail({
   }
 
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: buildFrom("AI & Beyond"),
       to: toEmail,
       subject: "Confirm your profile update — AI and Beyond",
@@ -153,7 +153,7 @@ export async function sendAccountDeletionVerificationEmail({
   }
 
   try {
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: buildFrom("AI & Beyond Security"),
       to: toEmail,
       subject: "Confirm your account deletion — AI and Beyond",
@@ -269,7 +269,7 @@ export async function sendTaskCreatedEmail({
     // 3. Send the generated HTML email message body via the shared Resend client.
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: buildFrom("AI & Beyond Planner"),
       to: toEmail,
       subject,
@@ -349,7 +349,7 @@ export async function sendDeadlineApproachingEmail({
         : "#10b981";
 
     // 2. Dispatch the warning alert email to the assignee about the imminent deadline.
-    const { error } = await resend.emails.send({
+    const { error } = await getResend().emails.send({
       from: buildFrom("AI & Beyond Coordinator"),
       to: toEmail,
       subject: `Urgent: Deadline Approaching for "${taskTitle}"`,
