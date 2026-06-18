@@ -155,7 +155,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const navItems: NavItem[] = [
     { label: "Dashboard", href: "/dashboard",              icon: <LayoutDashboard size={17} /> },
     { label: "Tasks",     href: "/dashboard/tasks",        icon: <CheckSquare size={17} /> },
-    { label: "Chat",      href: "/dashboard/chat",         icon: <MessageSquare size={17} /> },
+    // Chat is temporarily disabled. Undergoing maintenance.
+    // { label: "Chat",      href: "/dashboard/chat",         icon: <MessageSquare size={17} /> },
     { label: "Projects",  href: "/dashboard/ledger",       icon: <FolderOpen size={17} /> },
     { label: "Team",      href: "/dashboard/attendance",   icon: <Users size={17} /> },
     { label: "Reports",   href: "/dashboard/payout",       icon: <BarChart2 size={17} />, adminOnly: true },
