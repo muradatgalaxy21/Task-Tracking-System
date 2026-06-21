@@ -23,7 +23,6 @@ import {
   UserCheck,
   Flame,
   CalendarClock,
-  ArrowUpDown,
 } from "lucide-react";
 
 type ViewMode = "list" | "kanban";
@@ -58,30 +57,38 @@ export default function TaskListView() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
-  // Persistent deadline sorting order state
-  const [deadlineOrder, setDeadlineOrder] = useState<"asc" | "desc">("asc");
+  // Persistent deadline filtering state
+  const [deadlineFilter, setDeadlineFilter] = useState<"all" | "3h" | "6h" | "12h">("all");
 
-  // Sync sorting preference from profile database when profile is loaded
+  // Sync deadline filter preference from profile database when profile is loaded
+  // 1. Fetch user profile from AuthProvider.
+  // 2. Validate saved task_deadline_order to check if it's one of "all", "3h", "6h", "12h".
+  // 3. Update component state wrapped in Promise.resolve().then() to avoid ESLint trigger-cascading warning.
   useEffect(() => {
     if (profile?.task_deadline_order) {
-      const order = profile.task_deadline_order as "asc" | "desc";
+      const savedFilter = profile.task_deadline_order;
+      const allowedFilters = ["all", "3h", "6h", "12h"];
+      const resolvedFilter = allowedFilters.includes(savedFilter) ? (savedFilter as "all" | "3h" | "6h" | "12h") : "all";
       Promise.resolve().then(() => {
-        setDeadlineOrder(order);
+        setDeadlineFilter(resolvedFilter);
       });
     }
   }, [profile?.task_deadline_order]);
 
-  const toggleDeadlineOrder = async () => {
-    const nextOrder = deadlineOrder === "asc" ? "desc" : "asc";
-    setDeadlineOrder(nextOrder);
+  // Update the deadline filter state and persist it in the user settings database
+  // 1. Set local React state immediately for snappy UI response.
+  // 2. Dispatch a PATCH request to /api/settings/profile endpoint with task_deadline_order payload.
+  // 3. Catch errors to log connection drops gracefully.
+  const updateDeadlineFilter = async (filter: "all" | "3h" | "6h" | "12h") => {
+    setDeadlineFilter(filter);
     try {
       await fetch("/api/settings/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_deadline_order: nextOrder }),
+        body: JSON.stringify({ task_deadline_order: filter }),
       });
     } catch (err) {
-      console.error("Failed to update deadline sorting preference:", err);
+      console.error("Failed to update deadline filtering preference:", err);
     }
   };
 
@@ -152,11 +159,15 @@ export default function TaskListView() {
   }, [fetchData, refreshKey, activeWorkspace?.id]);
 
   // Apply status tab filter, then all active filters
+  // 1. Setup today, tomorrow, and current local timestamp.
+  // 2. Filter tasks based on search terms, assignee, priority, status tabs, and deadline proximity.
+  // 3. Sort tasks ascending by deadline to put closest/overdue tasks at the top.
   const filteredTasks = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
+    const now = new Date();
 
     const filtered = tasks.filter((t) => {
       if (activeTab !== "All" && t.status !== activeTab) return false;
@@ -167,24 +178,44 @@ export default function TaskListView() {
         const deadline = new Date(t.max_deadline);
         if (deadline < today || deadline >= tomorrow) return false;
       }
+
+      // Filter active tasks whose deadline is approaching within X hours (3h, 6h, or 12h)
+      // 1. If deadline filter is not 'all', check if the task is currently active (not completed/discarded/not done).
+      // 2. Calculate the difference between task deadline and current local time in hours.
+      // 3. Keep tasks whose deadline is less than or equal to the selected threshold (including overdue tasks).
+      if (deadlineFilter !== "all") {
+        const isActive = t.status === "Todo" || t.status === "In Progress" || t.status === "In Review";
+        if (!isActive) return false;
+
+        const deadlineTime = new Date(t.max_deadline).getTime();
+        const diffMs = deadlineTime - now.getTime();
+        const diffHours = diffMs / (1000 * 60 * 60);
+
+        let maxHours = 3;
+        if (deadlineFilter === "6h") maxHours = 6;
+        else if (deadlineFilter === "12h") maxHours = 12;
+
+        if (diffHours > maxHours) return false;
+      }
       return true;
     });
 
-    // Sort by max_deadline date based on the persistent sorting preference
+    // Sort by max_deadline date (closest/overdue first)
     return filtered.sort((a, b) => {
       const timeA = new Date(a.max_deadline).getTime();
       const timeB = new Date(b.max_deadline).getTime();
-      return deadlineOrder === "asc" ? timeA - timeB : timeB - timeA;
+      return timeA - timeB;
     });
-  }, [tasks, activeTab, search, assignedToMe, highPriority, dueToday, user?.id, deadlineOrder]);
+  }, [tasks, activeTab, search, assignedToMe, highPriority, dueToday, user?.id, deadlineFilter]);
 
-  const hasActiveFilter = search || assignedToMe || highPriority || dueToday;
+  const hasActiveFilter = search || assignedToMe || highPriority || dueToday || deadlineFilter !== "all";
 
   const clearFilters = () => {
     setSearch("");
     setAssignedToMe(false);
     setHighPriority(false);
     setDueToday(false);
+    updateDeadlineFilter("all");
   };
 
   // Task creation requires Manager or above (workspace role or global role)
@@ -314,14 +345,32 @@ export default function TaskListView() {
           Due Today
         </button>
 
-        <button
-          onClick={toggleDeadlineOrder}
-          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-500 font-medium transition-colors cursor-pointer"
-          title={`Sort by deadline ${deadlineOrder === "asc" ? "descending" : "ascending"}`}
-        >
-          <ArrowUpDown size={12} />
-          Sort: {deadlineOrder === "asc" ? "Deadline (Earliest)" : "Deadline (Latest)"}
-        </button>
+        <div className="relative">
+          <CalendarClock size={12} className={`absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${
+            deadlineFilter !== "all" ? "text-amber-500" : "text-neutral-400"
+          }`} />
+          <select
+            value={deadlineFilter}
+            onChange={(e) => updateDeadlineFilter(e.target.value as "all" | "3h" | "6h" | "12h")}
+            className={`text-xs pl-8 pr-8 py-2 rounded-lg border font-medium transition-all cursor-pointer appearance-none ${
+              deadlineFilter !== "all"
+                ? "bg-amber-50 border-amber-200 text-amber-700 font-semibold"
+                : "bg-white border-neutral-200 text-neutral-500 hover:border-neutral-300"
+            }`}
+          >
+            <option value="all" className="bg-white text-neutral-700">All Deadlines</option>
+            <option value="3h" className="bg-white text-neutral-700">Due in 3 Hours</option>
+            <option value="6h" className="bg-white text-neutral-700">Due in 6 Hours</option>
+            <option value="12h" className="bg-white text-neutral-700">Due in 12 Hours</option>
+          </select>
+          <div className={`absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none ${
+            deadlineFilter !== "all" ? "text-amber-500" : "text-neutral-400"
+          }`}>
+            <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+              <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+            </svg>
+          </div>
+        </div>
 
         {hasActiveFilter && (
           <button
