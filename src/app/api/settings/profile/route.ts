@@ -52,10 +52,10 @@ export async function PATCH(req: Request) {
 
     // 1.1. Update task_deadline_order immediately if provided (bypasses email verification)
     // 1. Check if the task_deadline_order value is passed in the request body.
-    // 2. Validate against a list of allowed values ("all", "3h", "6h", "12h", "asc", "desc").
+    // 2. Validate against a list of allowed values ("latest", "oldest", "overdue", "near", "3h", "6h", "12h", "asc", "desc").
     // 3. Update the database record immediately using Prisma.
     if (task_deadline_order !== undefined) {
-      const allowedOrders = ["all", "3h", "6h", "12h", "asc", "desc"];
+      const allowedOrders = ["latest", "oldest", "overdue", "near", "3h", "6h", "12h", "asc", "desc"];
       if (allowedOrders.includes(task_deadline_order)) {
         await prisma.user.update({
           where: { id: session.user.id },
