@@ -64,6 +64,8 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     return NextResponse.json(result);
   } catch (err) {
+    // Log the detailed error for server diagnosis (e.g. missing BLOB_READ_WRITE_TOKEN)
+    console.error("Vercel Blob Upload Helper Error:", err);
     // handleUpload throws on auth failure, malformed bodies, and constraint
     // violations. Map the auth case to 401 and everything else to 400.
     const message = err instanceof Error ? err.message : "Upload failed";

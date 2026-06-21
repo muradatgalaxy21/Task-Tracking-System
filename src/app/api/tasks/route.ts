@@ -377,9 +377,9 @@ export async function PATCH(req: Request) {
       ...(title !== undefined ? { title } : {}),
       ...(status !== undefined ? { status } : {}),
       ...(multiplier_earned !== undefined ? { multiplier_earned } : {}),
-      // Completed: multiplier calculated from timing; Not Done: explicit 0 (task closed but not performed)
+      // Completed: multiplier calculated from timing; Not Done: explicit -1.0 (task closed but not performed)
       ...(status === "Completed" ? { completed_at: new Date() } : {}),
-      ...(status === "Not Done" ? { completed_at: new Date(), multiplier_earned: 0 } : {}),
+      ...(status === "Not Done" ? { completed_at: new Date(), multiplier_earned: -1.0 } : {}),
       ...setReviewSubmittedAt,
       ...revertResetData,
       ...(description !== undefined ? { description } : {}),

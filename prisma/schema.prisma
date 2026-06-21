@@ -59,6 +59,8 @@ model User {
   sessions      Session[]
 
   role          String    @default("Member")
+  task_deadline_order String @default("asc")
+  accepted_privacy_policy Boolean @default(false)
 
   workspaces           Workspace[]       @relation("CreatedWorkspaces")
   memberships          WorkspaceMember[]
@@ -322,8 +324,8 @@ model MemberMonthlyPayout {
   base_payout  Float   @default(0)
   perf_payout  Float   @default(0)
   final_payout Float   @default(0)
-  present_days   Int   @default(0)
-  scheduled_days Int   @default(25)
+  present_days   Float   @default(0)
+  scheduled_days Int     @default(25)
   // JSON string: { [taskId]: overrideMultiplier } — non-destructive override applied at close time
   multiplier_overrides String @default("{}")
   created_at   DateTime @default(now())

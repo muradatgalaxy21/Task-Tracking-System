@@ -22,6 +22,8 @@ export interface NextAuthUser {
   full_name?: string | null;
   role: string;
   image?: string | null;
+  task_deadline_order?: string | null;
+  accepted_privacy_policy?: boolean;
 }
 
 interface AuthContextType {
@@ -106,6 +108,8 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
             full_name: data.full_name,
             role: data.role || "Member",
             image: data.image || null,
+            task_deadline_order: data.task_deadline_order || "asc",
+            accepted_privacy_policy: !!data.accepted_privacy_policy,
           };
           setProfile(updated);
 

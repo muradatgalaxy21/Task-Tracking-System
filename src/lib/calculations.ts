@@ -207,7 +207,7 @@ export function calculateTPS(
     });
   }
 
-  // TPS = flat average of all completed tasks this month * 65
+  // TPS = flat average of all completed tasks this month * 65 (clamped to a minimum of 0)
   const allMultipliers = completedThisMonth.map((t) =>
     t.multiplier_earned != null
       ? t.multiplier_earned
@@ -217,7 +217,7 @@ export function calculateTPS(
     allMultipliers.length > 0
       ? allMultipliers.reduce((s, m) => s + m, 0) / allMultipliers.length
       : 0;
-  const score = Math.round(flatAvg * 65 * 100) / 100;
+  const score = Math.max(0, Math.round(flatAvg * 65 * 100) / 100);
 
   return { score, weeklyBreakdown, details };
 }
@@ -231,7 +231,7 @@ export function calculateTPS(
 // ------------------------------------
 
 // Returns the count of unique dates in the target month where at least one
-// member in allAttendance has status "Present". Pass all workspace attendance records.
+// member in allAttendance has status "Present" or "Late". Pass all workspace attendance records.
 export function getActiveDaysInMonth(
   allAttendance: DailyAttendance[],
   year: number,
@@ -239,7 +239,7 @@ export function getActiveDaysInMonth(
 ): number {
   const activeDates = new Set<string>();
   for (const record of allAttendance) {
-    if (record.status !== "Present") continue;
+    if (record.status !== "Present" && record.status !== "Late") continue;
     // Slice ISO prefix directly — avoids timezone-shift bugs with new Date()
     const s = typeof record.date === "string" ? record.date : (record.date as unknown as Date).toISOString();
     const [yr, mo] = s.slice(0, 10).split("-").map(Number);
@@ -250,7 +250,8 @@ export function getActiveDaysInMonth(
   return activeDates.size;
 }
 
-// Counts a member's 'Present' days within the target month.
+// Counts a member's 'Present' and 'Late' days within the target month.
+// 'Present' is counted as 1.0 day, and 'Late' is counted as 0.5 days.
 // Slice the ISO prefix directly to avoid timezone-shift bugs with new Date() —
 // this is the canonical present-day count used by both calculateAS and the
 // MonthlyClose aggregation, so a widened DB query window is filtered precisely here.
@@ -259,12 +260,19 @@ export function countPresentDaysInMonth(
   year: number,
   month: number // 0-indexed
 ): number {
-  return attendanceRecords.filter((record) => {
-    if (record.status !== "Present") return false;
+  let count = 0;
+  for (const record of attendanceRecords) {
     const s = typeof record.date === "string" ? record.date : (record.date as unknown as Date).toISOString();
     const [yr, mo] = s.slice(0, 10).split("-").map(Number);
-    return yr === year && mo - 1 === month;
-  }).length;
+    if (yr === year && mo - 1 === month) {
+      if (record.status === "Present") {
+        count += 1.0;
+      } else if (record.status === "Late") {
+        count += 0.5;
+      }
+    }
+  }
+  return count;
 }
 
 export function calculateAS(

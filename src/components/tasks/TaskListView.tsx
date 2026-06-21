@@ -5,7 +5,8 @@
 // Filters: free-text search, Assigned to Me, High/Urgent priority, Due Today.
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import type { TaskLedger, Profile, TaskStatus } from "@/lib/types";
+import { useSearchParams } from "next/navigation";
+import type { TaskLedger, Profile, TaskStatus, UserRole } from "@/lib/types";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import TaskTableRow from "@/components/tasks/TaskTableRow";
@@ -22,6 +23,7 @@ import {
   UserCheck,
   Flame,
   CalendarClock,
+  ArrowUpDown,
 } from "lucide-react";
 
 type ViewMode = "list" | "kanban";
@@ -45,9 +47,43 @@ export default function TaskListView() {
   const [members, setMembers]   = useState<Profile[]>([]);
   const [loading, setLoading]   = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [activeTab, setActiveTab] = useState<TabType>("All");
+
+  // Read tab parameter if present in URL
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") as TabType;
+
+  const [activeTab, setActiveTab] = useState<TabType>(
+    initialTab && TABS.some(t => t.id === initialTab) ? initialTab : "All"
+  );
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  // Persistent deadline sorting order state
+  const [deadlineOrder, setDeadlineOrder] = useState<"asc" | "desc">("asc");
+
+  // Sync sorting preference from profile database when profile is loaded
+  useEffect(() => {
+    if (profile?.task_deadline_order) {
+      const order = profile.task_deadline_order as "asc" | "desc";
+      Promise.resolve().then(() => {
+        setDeadlineOrder(order);
+      });
+    }
+  }, [profile?.task_deadline_order]);
+
+  const toggleDeadlineOrder = async () => {
+    const nextOrder = deadlineOrder === "asc" ? "desc" : "asc";
+    setDeadlineOrder(nextOrder);
+    try {
+      await fetch("/api/settings/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_deadline_order: nextOrder }),
+      });
+    } catch (err) {
+      console.error("Failed to update deadline sorting preference:", err);
+    }
+  };
 
   // Derive selectedTask from the live tasks array so the panel always shows fresh data
   const selectedTask = selectedTaskId
@@ -95,7 +131,7 @@ export default function TaskListView() {
           id: userId,
           email: userEmail || "",
           full_name: profileName || userEmail?.split("@")[0] || "Me",
-          role: (profileRole as any) || "Member",
+          role: (profileRole as UserRole) || "Member",
           created_at: new Date().toISOString(),
         });
       }
@@ -107,10 +143,12 @@ export default function TaskListView() {
     } finally {
       setLoading(false);
     }
-  }, [userId, userEmail, profileName, profileRole, activeWorkspace?.id]);
+  }, [userId, userEmail, profileName, profileRole, activeWorkspace]);
 
   useEffect(() => {
-    fetchData();
+    Promise.resolve().then(() => {
+      fetchData();
+    });
   }, [fetchData, refreshKey, activeWorkspace?.id]);
 
   // Apply status tab filter, then all active filters
@@ -120,7 +158,7 @@ export default function TaskListView() {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    return tasks.filter((t) => {
+    const filtered = tasks.filter((t) => {
       if (activeTab !== "All" && t.status !== activeTab) return false;
       if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
       if (assignedToMe && t.assignee_id !== user?.id) return false;
@@ -131,7 +169,14 @@ export default function TaskListView() {
       }
       return true;
     });
-  }, [tasks, activeTab, search, assignedToMe, highPriority, dueToday, user?.id]);
+
+    // Sort by max_deadline date based on the persistent sorting preference
+    return filtered.sort((a, b) => {
+      const timeA = new Date(a.max_deadline).getTime();
+      const timeB = new Date(b.max_deadline).getTime();
+      return deadlineOrder === "asc" ? timeA - timeB : timeB - timeA;
+    });
+  }, [tasks, activeTab, search, assignedToMe, highPriority, dueToday, user?.id, deadlineOrder]);
 
   const hasActiveFilter = search || assignedToMe || highPriority || dueToday;
 
@@ -267,6 +312,15 @@ export default function TaskListView() {
         >
           <CalendarClock size={12} />
           Due Today
+        </button>
+
+        <button
+          onClick={toggleDeadlineOrder}
+          className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-500 font-medium transition-colors cursor-pointer"
+          title={`Sort by deadline ${deadlineOrder === "asc" ? "descending" : "ascending"}`}
+        >
+          <ArrowUpDown size={12} />
+          Sort: {deadlineOrder === "asc" ? "Deadline (Earliest)" : "Deadline (Latest)"}
         </button>
 
         {hasActiveFilter && (

@@ -18,7 +18,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, full_name: true, email: true, role: true, image: true },
+    select: { id: true, full_name: true, email: true, role: true, image: true, task_deadline_order: true, accepted_privacy_policy: true },
   });
 
   if (!user) {
@@ -38,7 +38,7 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const { full_name, image } = await req.json();
+    const { full_name, image, task_deadline_order } = await req.json();
 
     // 1. Update image immediately if provided (bypasses email verification)
     if (image !== undefined) {
@@ -48,6 +48,16 @@ export async function PATCH(req: Request) {
       });
       // Bust cached member lists so the new avatar shows in member/partner views
       revalidateMembers();
+    }
+
+    // 1.1. Update task_deadline_order immediately if provided (bypasses email verification)
+    if (task_deadline_order !== undefined) {
+      if (task_deadline_order === "asc" || task_deadline_order === "desc") {
+        await prisma.user.update({
+          where: { id: session.user.id },
+          data: { task_deadline_order },
+        });
+      }
     }
 
     // Fetch user to check current role and compare name
@@ -103,7 +113,7 @@ export async function PATCH(req: Request) {
     const updated = await prisma.user.update({
       where: { id: session.user.id },
       data: { full_name: full_name.trim() },
-      select: { id: true, full_name: true, email: true, role: true, image: true },
+      select: { id: true, full_name: true, email: true, role: true, image: true, task_deadline_order: true, accepted_privacy_policy: true },
     });
 
     // Bust cached member lists so the new name shows in member/partner views

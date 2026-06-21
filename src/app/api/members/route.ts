@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     if (id) {
       const member = await prisma.user.findUnique({
         where: { id },
-        select: { id: true, full_name: true, email: true, role: true, image: true },
+        select: { id: true, full_name: true, email: true, role: true, image: true, task_deadline_order: true, accepted_privacy_policy: true },
       });
       return NextResponse.json(member);
     }

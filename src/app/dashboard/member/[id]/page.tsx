@@ -130,9 +130,10 @@ export default function MemberPage() {
     const { year, month } = isoYearMonth(a.date);
     return year === currentYear && month === currentMonth;
   });
-  const presentDays = currentMonthAttendance.filter((a) => a.status === "Present").length;
+  const rawPresentDays = currentMonthAttendance.filter((a) => a.status === "Present").length;
   const lateDays = currentMonthAttendance.filter((a) => a.status === "Late").length;
   const absentDays = currentMonthAttendance.filter((a) => a.status === "Absent").length;
+  const presentDays = rawPresentDays + lateDays * 0.5;
   const totalScheduled = activeDays;
 
   // Group all attendance records by month for historical display
@@ -254,7 +255,7 @@ export default function MemberPage() {
           <p className="text-[10px] text-neutral-400 uppercase font-medium tracking-wider mb-3">{monthName}</p>
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center">
-              <p className="text-xl font-bold text-green-600">{presentDays}</p>
+              <p className="text-xl font-bold text-green-600">{rawPresentDays}</p>
               <p className="text-[10px] text-neutral-500 mt-0.5">Present</p>
             </div>
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center">
@@ -438,10 +439,12 @@ export default function MemberPage() {
                             ? "text-orange-500"
                             : detail.multiplier > 0
                             ? "text-red-500"
+                            : detail.multiplier < 0
+                            ? "text-red-700 font-bold"
                             : "text-neutral-300"
                         }`}
                       >
-                        {detail.multiplier > 0
+                        {detail.multiplier !== 0
                           ? `${detail.multiplier}x`
                           : "\u2014"}
                       </span>
