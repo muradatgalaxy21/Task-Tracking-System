@@ -250,8 +250,8 @@ export default function MonthEndPage() {
 
   const distributionPool = (activeClose?.total_revenue ?? 0) * 0.4;
   const treasuryAmount = (activeClose?.total_revenue ?? 0) * 0.6;
-  const basePool = distributionPool * 0.6;
-  const performancePool = distributionPool * 0.4;
+  const basePool = 0;
+  const performancePool = distributionPool;
 
   return (
     <div className="space-y-6 animate-fade-in max-w-6xl">
@@ -492,7 +492,7 @@ export default function MonthEndPage() {
 
             {/* Distribution summary */}
             {activeClose.total_revenue > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="glass-card p-3 text-center">
                   <p className="text-[10px] text-neutral-400 uppercase font-medium tracking-wider mb-1">Revenue</p>
                   <p className="text-base font-bold text-neutral-800">
@@ -505,13 +505,8 @@ export default function MonthEndPage() {
                   <p className="text-base font-bold text-neutral-500">{treasuryAmount.toLocaleString()}</p>
                   <p className="text-[10px] text-neutral-400">Retained</p>
                 </div>
-                <div className="glass-card p-3 text-center bg-blue-50/40">
-                  <p className="text-[10px] text-blue-500 uppercase font-medium tracking-wider mb-1">Base Pool (24%)</p>
-                  <p className="text-base font-bold text-blue-600">{basePool.toLocaleString()}</p>
-                  <p className="text-[10px] text-neutral-400">Equal split</p>
-                </div>
                 <div className="glass-card p-3 text-center bg-purple-50/40">
-                  <p className="text-[10px] text-purple-500 uppercase font-medium tracking-wider mb-1">Perf. Pool (16%)</p>
+                  <p className="text-[10px] text-purple-500 uppercase font-medium tracking-wider mb-1">Perf. Pool (40%)</p>
                   <p className="text-base font-bold text-purple-600">{performancePool.toLocaleString()}</p>
                   <p className="text-[10px] text-neutral-400">Score-based</p>
                 </div>
@@ -533,9 +528,7 @@ export default function MonthEndPage() {
                       <th className="text-center">TPS (/65)</th>
                       <th className="text-center">AS (/35)</th>
                       <th className="text-center">Total (/100)</th>
-                      <th className="text-center">Base (PKR)</th>
-                      <th className="text-center">Perf. (PKR)</th>
-                      <th className="text-right">Final (PKR)</th>
+                      <th className="text-right">Payout (PKR)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -693,16 +686,6 @@ function MemberRow({
         <td className="px-4 py-3 text-center">
           <span className="text-sm font-bold text-neutral-800">{payout.total_score.toFixed(1)}</span>
         </td>
-        <td className="px-4 py-3 text-center">
-          <span className="text-sm font-semibold text-blue-600">
-            {payout.base_payout > 0 ? payout.base_payout.toLocaleString() : "—"}
-          </span>
-        </td>
-        <td className="px-4 py-3 text-center">
-          <span className="text-sm font-semibold text-purple-600">
-            {payout.perf_payout > 0 ? payout.perf_payout.toLocaleString() : "—"}
-          </span>
-        </td>
         <td className="px-4 py-3 text-right">
           <span className="text-sm font-bold text-green-600">
             {payout.final_payout > 0 ? payout.final_payout.toLocaleString() : "—"}
@@ -713,7 +696,7 @@ function MemberRow({
       {/* Multiplier override panel (Draft only) */}
       {expanded && !isFinalized && (
         <tr>
-          <td colSpan={8} className="px-4 pb-3">
+          <td colSpan={6} className="px-4 pb-3">
             <div className="bg-neutral-50/80 border border-neutral-200/60 rounded-xl p-4 animate-fade-in">
               <p className="text-xs font-semibold text-neutral-500 mb-3 uppercase tracking-wider">
                 Multiplier Overrides for {payout.user_name}

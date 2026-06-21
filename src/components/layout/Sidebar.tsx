@@ -24,6 +24,7 @@ import {
   MessageSquare,
   CalendarCheck,
   History,
+  User,
 } from "lucide-react";
 
 interface NavItem {
@@ -159,6 +160,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     // { label: "Chat",      href: "/dashboard/chat",         icon: <MessageSquare size={17} /> },
     { label: "Projects",  href: "/dashboard/ledger",       icon: <FolderOpen size={17} /> },
     { label: "Team",      href: "/dashboard/attendance",   icon: <Users size={17} /> },
+    { label: "My Profile", href: user ? `/dashboard/member/${user.id}` : "#", icon: <User size={17} /> },
     { label: "Reports",   href: "/dashboard/payout",       icon: <BarChart2 size={17} />, adminOnly: true },
     { label: "Month End", href: "/dashboard/month-end",    icon: <CalendarCheck size={17} />, ownerOnly: true },
     { label: "My History",href: "/dashboard/history",      icon: <History size={17} /> },
@@ -282,7 +284,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               );
             })}
 
-          {isAdmin && !collapsed && (
+          {!collapsed && (
             <div className="mt-4">
               <p className="px-2 pt-2 pb-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">
                 Members
@@ -323,6 +325,17 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             <LogOut size={16} />
             {!collapsed && <span className="text-sm">Sign Out</span>}
           </button>
+          {!collapsed && (
+            <div className="px-2 mt-2 pt-2 border-t border-neutral-200/60 text-center">
+              <Link
+                href="/dashboard/policy"
+                onClick={onClose}
+                className="text-[10px] text-neutral-400 hover:text-warm-500 transition-colors font-medium"
+              >
+                Privacy Policy
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* Collapse toggle — desktop only */}

@@ -183,9 +183,7 @@ export default function HistoryPage() {
                     <th className="text-center">TPS (/65)</th>
                     <th className="text-center">AS (/35)</th>
                     <th className="text-center">Score (/100)</th>
-                    <th className="text-center">Base (PKR)</th>
-                    <th className="text-center">Perf. (PKR)</th>
-                    <th className="text-right">Final (PKR)</th>
+                    <th className="text-right">Payout (PKR)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -225,16 +223,6 @@ export default function HistoryPage() {
                           {entry.totalScore.toFixed(1)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="text-sm font-semibold text-blue-600">
-                          {entry.basePayout.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="text-sm font-semibold text-purple-600">
-                          {entry.perfPayout.toLocaleString()}
-                        </span>
-                      </td>
                       <td className="px-4 py-3 text-right">
                         <span className="text-sm font-bold text-green-600">
                           {entry.finalPayout.toLocaleString()}
@@ -245,7 +233,7 @@ export default function HistoryPage() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-neutral-200">
-                    <td colSpan={7} className="px-4 py-3 text-sm font-semibold text-neutral-700">
+                    <td colSpan={5} className="px-4 py-3 text-sm font-semibold text-neutral-700">
                       Total Earnings
                     </td>
                     <td className="px-4 py-3 text-right text-sm font-bold text-green-600">

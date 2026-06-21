@@ -341,16 +341,15 @@ export function calculatePayouts(
   memberScores: { memberId: string; memberName: string; totalScore: number }[],
   totalRevenue: number
 ): PayoutResult[] {
-  // Tier 1: Treasury deduction
+  // Tier 1: Treasury deduction (60% retained)
   const distributionPool = totalRevenue * 0.40;
 
-  // Tier 2: Split the distribution pool
-  const basePool = distributionPool * 0.60;
-  const performancePool = distributionPool * 0.40;
+  // Tier 2: Split the distribution pool - Now 100% Performance-based
+  const basePool = 0;
+  const performancePool = distributionPool;
 
-  // Base payout is equal for every member (dynamic per member count)
-  const memberCount = memberScores.length;
-  const basePayout = memberCount > 0 ? basePool / memberCount : 0;
+  // Base payout is 0 (removed from layout, kept as 0 for database compatibility)
+  const basePayout = 0;
 
   // Sum all scores for proportional performance calculation
   const totalTeamScore = memberScores.reduce((s, m) => s + m.totalScore, 0);
@@ -363,12 +362,12 @@ export function calculatePayouts(
       totalTeamScore > 0
         ? (m.totalScore / totalTeamScore) * performancePool
         : 0;
-    const finalPayout = basePayout + perfPayout;
+    const finalPayout = perfPayout;
 
     return {
       ...m,
       sharePercentage: Math.round(sharePercentage * 100) / 100,
-      basePayout: Math.round(basePayout * 100) / 100,
+      basePayout: 0,
       perfPayout: Math.round(perfPayout * 100) / 100,
       finalPayout: Math.round(finalPayout * 100) / 100,
     };

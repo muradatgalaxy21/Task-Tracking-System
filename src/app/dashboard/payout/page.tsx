@@ -108,8 +108,8 @@ export default function PayoutPage() {
 
   const distributionPool = totalRevenue * 0.4;
   const treasuryAmount = totalRevenue * 0.6;
-  const basePool = distributionPool * 0.6;
-  const performancePool = distributionPool * 0.4;
+  const basePool = 0;
+  const performancePool = distributionPool;
 
   if (authLoading || loading) {
     return (
@@ -188,7 +188,7 @@ export default function PayoutPage() {
             <PieChart size={16} className="text-purple-500" />
             Distribution Breakdown
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-neutral-50 border border-neutral-100 rounded-xl p-4">
               <p className="text-[10px] text-neutral-400 uppercase font-medium tracking-wider mb-1">
                 Total Revenue
@@ -198,7 +198,7 @@ export default function PayoutPage() {
               </p>
               <p className="text-[10px] text-neutral-400 mt-0.5">PKR</p>
             </div>
-            <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4">
+            <div className="bg-neutral-50 border border-neutral-205 rounded-xl p-4">
               <p className="text-[10px] text-neutral-400 uppercase font-medium tracking-wider mb-1">
                 Treasury (60%)
               </p>
@@ -207,18 +207,9 @@ export default function PayoutPage() {
               </p>
               <p className="text-[10px] text-neutral-400 mt-0.5">Retained</p>
             </div>
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-              <p className="text-[10px] text-blue-500 uppercase font-medium tracking-wider mb-1">
-                Base Pool (24%)
-              </p>
-              <p className="text-lg font-bold text-blue-600">
-                {basePool.toLocaleString()}
-              </p>
-              <p className="text-[10px] text-neutral-400 mt-0.5">Equal split</p>
-            </div>
             <div className="bg-purple-50 border border-purple-100 rounded-xl p-4">
               <p className="text-[10px] text-purple-500 uppercase font-medium tracking-wider mb-1">
-                Perf. Pool (16%)
+                Performance Pool (40%)
               </p>
               <p className="text-lg font-bold text-purple-600">
                 {performancePool.toLocaleString()}
@@ -245,9 +236,7 @@ export default function PayoutPage() {
                 <th className="text-center">AS (/35)</th>
                 <th className="text-center">Total (/100)</th>
                 <th className="text-center">Share %</th>
-                <th className="text-center">Base (PKR)</th>
-                <th className="text-center">Perf. (PKR)</th>
-                <th className="text-right">Final (PKR)</th>
+                <th className="text-right">Payout (PKR)</th>
               </tr>
             </thead>
             <tbody>
@@ -313,16 +302,6 @@ export default function PayoutPage() {
                     <td className="px-4 py-3 text-center">
                       <span className="text-sm font-semibold text-amber-600">
                         {payout ? `${payout.sharePercentage}%` : "\u2014"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="text-sm font-semibold text-blue-600">
-                        {payout ? payout.basePayout.toLocaleString() : "\u2014"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="text-sm font-semibold text-purple-600">
-                        {payout ? payout.perfPayout.toLocaleString() : "\u2014"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">

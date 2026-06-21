@@ -234,12 +234,11 @@ export default function PolicyPage() {
                 <li><strong className="text-red-500">Absent</strong>: Counts as `0.0` day.</li>
               </ul>
               <p>
-                <strong>Payout Splits:</strong> Total revenue generated in a workspace is closed at month-end under a 3-tier layout:
+                <strong>Payout Splits:</strong> Total revenue generated in a workspace is closed at month-end under a 2-tier layout:
               </p>
               <ul className="list-disc pl-5 space-y-1 text-neutral-500">
                 <li><strong>60% Retained Treasury</strong>: Retained by the company for overheads and reserves.</li>
-                <li><strong>24% Base Payout Pool</strong>: Distributed equally among all active workspace members.</li>
-                <li><strong>16% Performance Payout Pool</strong>: Distributed proportionally according to each member&apos;s final composite score (max 100).</li>
+                <li><strong>40% Performance Payout Pool</strong>: Distributed proportionally according to each member&apos;s final composite score (max 100).</li>
               </ul>
             </div>
           </section>

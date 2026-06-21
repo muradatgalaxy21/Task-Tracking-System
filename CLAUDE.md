@@ -116,7 +116,7 @@ Two components combine into a 100-point score (v3 engine):
 
 **Date parsing rule:** Never use `new Date(dateString)` to compare attendance dates — Turso returns ISO strings (e.g. `"2024-05-28T19:00:00.000Z"`) and `new Date()` will shift the date in non-UTC timezones. Always slice the ISO prefix directly: `s.slice(0, 10)` → `"2024-05-28"`, then split on `"-"` to extract year/month/day. This pattern is used throughout `calculations.ts` and attendance UI components.
 
-Payouts use a 3-tier split: 60% Treasury / 24% Base (equal per member) / 16% Performance (score-proportional). Distribution pool = 40% of revenue; Base = 60% of pool; Performance = 40% of pool.
+Payouts use a 2-tier split: 60% Treasury / 40% Performance (score-proportional). Distribution pool = 40% of revenue; Performance = 100% of pool.
 
 ### Task Status Convention
 

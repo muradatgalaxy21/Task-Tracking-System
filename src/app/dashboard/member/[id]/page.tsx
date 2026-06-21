@@ -103,7 +103,7 @@ export default function MemberPage() {
     );
   }
 
-  const canView = isAdmin || user?.id === memberId;
+  const canView = true;
 
 
   const now = new Date();
