@@ -69,6 +69,7 @@ model User {
   notifications        Notification[]
   invitations_created  Invitation[]      @relation("InvitationsCreated")
   chat_messages        ChatMessage[]
+  announcements        Announcement[]
 }
 
 model Workspace {
@@ -88,6 +89,7 @@ model Workspace {
   invitations    Invitation[]
   chat_messages  ChatMessage[]
   monthly_closes MonthlyClose[]
+  announcements  Announcement[]
 }
 
 model WorkspaceMember {
@@ -287,6 +289,35 @@ model AccountDeletionToken {
   payload    String   // JSON string of { transfers: Record<workspaceId, newOwnerUserId>, workspacesToDelete: string[] }
   expires_at DateTime
   created_at DateTime @default(now())
+}
+
+// Stores a pending email change request. A verification link is sent to the new
+// email address; clicking it applies the change and deletes the token.
+model EmailChangeToken {
+  id         String   @id @default(cuid())
+  user_id    String
+  token      String   @unique
+  new_email  String
+  expires_at DateTime
+  created_at DateTime @default(now())
+}
+
+// Announcements created by Admin (global) or workspace Owner/Admin.
+// workspace_id is null for global announcements visible to all users.
+// type controls the banner color: "info" | "warning" | "urgent".
+model Announcement {
+  id           String    @id @default(uuid())
+  workspace_id String?
+  user_id      String
+  content      String
+  // "info" | "warning" | "urgent"
+  type         String    @default("info")
+  active       Boolean   @default(true)
+  created_at   DateTime  @default(now())
+  expires_at   DateTime?
+
+  workspace Workspace? @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
 
 // Stores each owner-initiated month-end close for a workspace.

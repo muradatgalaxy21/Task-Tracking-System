@@ -45,6 +45,16 @@ function SettingsContent() {
           Profile updated successfully.
         </div>
       )}
+      {verifyStatus === "email-success" && (
+        <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+          Email address updated successfully. Your new email is now active.
+        </div>
+      )}
+      {verifyStatus === "email-taken" && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          The email address is already associated with another account. Please try a different email.
+        </div>
+      )}
       {verifyStatus === "expired" && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
           The verification link has expired. Please save your profile again to receive a new link.

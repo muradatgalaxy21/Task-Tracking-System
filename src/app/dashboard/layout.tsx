@@ -10,6 +10,7 @@ import { WorkspaceProvider, useWorkspace } from "@/components/providers/Workspac
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import Sidebar from "@/components/layout/Sidebar";
 import NotificationsBell from "@/components/layout/NotificationsBell";
+import AnnouncementBanner from "@/components/layout/AnnouncementBanner";
 import { Menu, DollarSign, CalendarCheck, X } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -47,6 +48,9 @@ function DashboardShell({
   // 2. Check if the pathname matches "/dashboard/policy".
   // 3. Use this flag to temporarily disable the blocking policy agreement overlay.
   const isPolicyPage = pathname === "/dashboard/policy";
+
+  // Sidebar collapsed state — lifted from Sidebar so main content margin adjusts dynamically
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [balance, setBalance] = useState<number | null>(null);
   const [balanceLabel, setBalanceLabel] = useState<string | null>(null);
@@ -209,6 +213,9 @@ function DashboardShell({
     signOut();
   };
 
+  // Compute dynamic margin based on sidebar collapsed state
+  const mainMarginClass = sidebarCollapsed ? "md:ml-[56px]" : "md:ml-[260px]";
+
   return (
     <div className="min-h-screen bg-gradient-radial">
       {/* Mobile top header */}
@@ -234,10 +241,15 @@ function DashboardShell({
         <NotificationsBell />
       </header>
 
-      <Sidebar isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+      <Sidebar
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+      />
 
       {/* Desktop top-right: balance chip + notification bell */}
-      <div className="fixed top-6 right-6 z-40 hidden md:flex items-center gap-3">
+      <div className={`fixed top-6 z-40 hidden md:flex items-center gap-3 right-6`}>
         {balance !== null && (
           <button
             onClick={() => router.push("/dashboard/history")}
@@ -256,16 +268,21 @@ function DashboardShell({
         <NotificationsBell />
       </div>
 
-      {/* Main content */}
-      <main className="md:ml-[260px] pt-14 md:pt-0 p-4 md:p-6 lg:p-8 transition-all duration-200">
-        {/* New month banner for Owner */}
-        {showNewMonthBanner && !bannerDismissed && (
-          <NewMonthBanner
-            onDismiss={() => { setBannerDismissed(true); setShowNewMonthBanner(false); }}
-            onGo={() => { setBannerDismissed(true); setShowNewMonthBanner(false); router.push("/dashboard/month-end"); }}
-          />
-        )}
-        {children}
+      {/* Main content — margin adjusts with sidebar collapse */}
+      <main className={`${mainMarginClass} pt-14 md:pt-0 transition-all duration-300`}>
+        {/* Announcement banners — full width at top */}
+        <AnnouncementBanner />
+
+        <div className="p-4 md:p-6 lg:p-8">
+          {/* New month banner for Owner */}
+          {showNewMonthBanner && !bannerDismissed && (
+            <NewMonthBanner
+              onDismiss={() => { setBannerDismissed(true); setShowNewMonthBanner(false); }}
+              onGo={() => { setBannerDismissed(true); setShowNewMonthBanner(false); router.push("/dashboard/month-end"); }}
+            />
+          )}
+          {children}
+        </div>
       </main>
 
       {/* Pending Reviews Modal */}

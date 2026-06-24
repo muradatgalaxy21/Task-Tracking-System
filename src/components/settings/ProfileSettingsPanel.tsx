@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { upload } from "@vercel/blob/client";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useTheme } from "@/components/providers/ThemeProvider";
-import { Loader2, Check, Camera, Trash2, X, AlertTriangle } from "lucide-react";
+import { Loader2, Check, Camera, Trash2, X, AlertTriangle, Mail } from "lucide-react";
 import UserAvatar from "@/components/common/UserAvatar";
 import { validateFileForUpload } from "@/lib/upload";
 
@@ -81,9 +81,12 @@ export default function ProfileSettingsPanel() {
   const { theme, setTheme } = useTheme();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [fullName, setFullName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "info" | "error"; text: string } | null>(null);
+  const [emailMessage, setEmailMessage] = useState<{ type: "success" | "info" | "error"; text: string } | null>(null);
 
   // State variables for the account deletion flow
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -175,6 +178,7 @@ export default function ProfileSettingsPanel() {
         const data: ProfileData = await res.json();
         setProfile(data);
         setFullName(data.full_name ?? "");
+        setNewEmail(data.email ?? "");
       }
     }
     load();
@@ -315,6 +319,40 @@ export default function ProfileSettingsPanel() {
     }
   };
 
+  // Handles the email change request — sends a verification link to the new address
+  const handleEmailChange = async () => {
+    if (!newEmail.trim() || newEmail.trim().toLowerCase() === (profile?.email ?? "").toLowerCase()) return;
+    setSavingEmail(true);
+    setEmailMessage(null);
+
+    try {
+      const res = await fetch("/api/settings/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newEmail.trim() }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setEmailMessage({ type: "error", text: data.error || "Failed to update email." });
+        return;
+      }
+
+      if (data.emailChangeVerification) {
+        // Verification email was sent to the new address
+        setEmailMessage({
+          type: "info",
+          text: `A verification link has been sent to ${newEmail.trim().toLowerCase()}. Click it to confirm the change.`,
+        });
+      }
+    } catch {
+      setEmailMessage({ type: "error", text: "Something went wrong. Please try again." });
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
   if (!profile) {
     return (
       <div className="flex items-center gap-2 py-8 text-sm text-neutral-400">
@@ -325,6 +363,8 @@ export default function ProfileSettingsPanel() {
   }
 
   const isElevated = profile.role === "Owner" || profile.role === "Admin";
+  const emailChanged = newEmail.trim().toLowerCase() !== (profile.email ?? "").toLowerCase();
+
   return (
     <div className="bg-white rounded-xl border border-neutral-200 p-6 space-y-5">
       <div>
@@ -404,20 +444,57 @@ export default function ProfileSettingsPanel() {
         />
       </div>
 
-      {/* Email — read-only */}
+      {/* Email — editable with verification */}
       <div>
         <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider mb-1">
           Email
         </label>
-        <input
-          type="email"
-          value={profile.email ?? ""}
-          readOnly
-          className="glass-input text-sm bg-neutral-50 text-neutral-400 cursor-not-allowed"
-        />
+        <div className="flex gap-2">
+          <input
+            type="email"
+            value={newEmail}
+            onChange={(e) => { setNewEmail(e.target.value); setEmailMessage(null); }}
+            placeholder="your@email.com"
+            className="glass-input text-sm flex-1"
+            onKeyDown={(e) => { if (e.key === "Enter" && emailChanged) handleEmailChange(); }}
+          />
+          {emailChanged && (
+            <button
+              type="button"
+              onClick={handleEmailChange}
+              disabled={savingEmail || !emailChanged}
+              className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            >
+              {savingEmail ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Mail className="w-3.5 h-3.5" />
+                  Verify
+                </>
+              )}
+            </button>
+          )}
+        </div>
         <p className="text-[10px] text-neutral-400 mt-1">
-          Email is tied to your account and cannot be changed here.
+          A verification link will be sent to the new email address before the change is applied.
         </p>
+        {emailMessage && (
+          <div
+            className={`rounded-lg px-4 py-3 text-xs mt-2 ${
+              emailMessage.type === "success"
+                ? "bg-green-50 border border-green-200 text-green-700"
+                : emailMessage.type === "info"
+                ? "bg-blue-50 border border-blue-200 text-blue-700"
+                : "bg-red-50 border border-red-200 text-red-600"
+            }`}
+          >
+            {emailMessage.text}
+          </div>
+        )}
       </div>
 
       {/* Global role — display only */}

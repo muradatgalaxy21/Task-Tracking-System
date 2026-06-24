@@ -12,6 +12,8 @@ import {
   Plus,
   UserX,
   RefreshCw,
+  Megaphone,
+  X,
 } from "lucide-react";
 import UserAvatar from "@/components/common/UserAvatar";
 
@@ -24,11 +26,33 @@ type WorkspaceMemberRow = {
   image?: string | null;
 };
 
+type AnnouncementRow = {
+  id: string;
+  content: string;
+  type: string;
+  active: boolean;
+  created_at: string;
+  expires_at: string | null;
+  user: { full_name: string | null; image: string | null };
+};
+
 const ROLE_COLOR: Record<string, string> = {
   Owner: "text-violet-600 bg-violet-50",
   Admin: "text-[#7b2c51] bg-[#7b2c51]/10",
   Member: "text-blue-600 bg-blue-50",
   Guest: "text-gray-400 bg-gray-50",
+};
+
+const ANN_TYPE_LABEL: Record<string, string> = {
+  info: "Info",
+  warning: "Warning",
+  urgent: "Urgent",
+};
+
+const ANN_TYPE_CLASS: Record<string, string> = {
+  info: "bg-blue-50 text-blue-700",
+  warning: "bg-amber-50 text-amber-700",
+  urgent: "bg-red-50 text-red-700",
 };
 
 export default function WorkspaceSettingsPanel() {
@@ -51,6 +75,13 @@ export default function WorkspaceSettingsPanel() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [deletingInvite, setDeletingInvite] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+
+  // Announcements state
+  const [announcements, setAnnouncements] = useState<AnnouncementRow[]>([]);
+  const [announcementContent, setAnnouncementContent] = useState("");
+  const [announcementType, setAnnouncementType] = useState("info");
+  const [creatingAnnouncement, setCreatingAnnouncement] = useState(false);
+  const [deletingAnnouncementId, setDeletingAnnouncementId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
 
@@ -75,13 +106,32 @@ export default function WorkspaceSettingsPanel() {
     }
   }, [activeWorkspace?.id]);
 
+  // Fetch announcements for this workspace
+  const fetchAnnouncements = useCallback(async () => {
+    if (!activeWorkspace?.id) {
+      setAnnouncements([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/announcements?workspaceId=${activeWorkspace.id}`);
+      if (res.ok) {
+        const data: AnnouncementRow[] = await res.json();
+        setAnnouncements(data);
+      }
+    } catch {
+      // Non-critical
+    }
+  }, [activeWorkspace?.id]);
+
   useEffect(() => {
     if (activeWorkspace) {
       setWsName(activeWorkspace.name);
       setWsDesc(activeWorkspace.description ?? "");
     }
+    setAnnouncements([]);
     fetchData();
-  }, [activeWorkspace?.id, fetchData]);
+    fetchAnnouncements();
+  }, [activeWorkspace?.id, fetchData, fetchAnnouncements]);
 
   const handleSaveInfo = async () => {
     if (!activeWorkspace?.id || !wsName.trim()) return;
@@ -170,6 +220,47 @@ export default function WorkspaceSettingsPanel() {
       }
     } finally {
       setApprovingId(null);
+    }
+  };
+
+  // Create a new announcement for this workspace
+  const handleCreateAnnouncement = async () => {
+    if (!activeWorkspace?.id || !announcementContent.trim()) return;
+    setCreatingAnnouncement(true);
+    try {
+      const res = await fetch("/api/announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: announcementContent.trim(),
+          type: announcementType,
+          workspaceId: activeWorkspace.id,
+        }),
+      });
+      if (res.ok) {
+        setAnnouncementContent("");
+        setAnnouncementType("info");
+        await fetchAnnouncements();
+      }
+    } catch {
+      // Non-critical
+    } finally {
+      setCreatingAnnouncement(false);
+    }
+  };
+
+  // Deactivate an announcement
+  const handleDeleteAnnouncement = async (id: string) => {
+    setDeletingAnnouncementId(id);
+    try {
+      const res = await fetch(`/api/announcements?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+      }
+    } catch {
+      // Non-critical
+    } finally {
+      setDeletingAnnouncementId(null);
     }
   };
 
@@ -274,6 +365,103 @@ export default function WorkspaceSettingsPanel() {
           </div>
         )}
       </div>
+
+      {/* Announcements — Admin/Owner only */}
+      {isWorkspaceAdmin && (
+        <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-neutral-100">
+            <div className="flex items-center gap-2">
+              <Megaphone size={16} className="text-neutral-500" />
+              <h2 className="text-sm font-semibold text-neutral-800">Announcements</h2>
+            </div>
+            <p className="text-xs text-neutral-400 mt-0.5">
+              Create announcements that appear at the top of the dashboard for all workspace members.
+            </p>
+          </div>
+
+          {/* Create announcement form */}
+          <div className="px-6 py-4 border-b border-neutral-50 bg-neutral-50/50">
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider mb-1">
+                  Message
+                </label>
+                <input
+                  type="text"
+                  value={announcementContent}
+                  onChange={(e) => setAnnouncementContent(e.target.value)}
+                  placeholder="Write your announcement here..."
+                  className="glass-input text-sm"
+                  onKeyDown={(e) => { if (e.key === "Enter" && announcementContent.trim()) handleCreateAnnouncement(); }}
+                />
+              </div>
+              <div className="flex items-end gap-3">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-semibold text-neutral-400 uppercase tracking-wider mb-1">
+                    Type
+                  </label>
+                  <select
+                    value={announcementType}
+                    onChange={(e) => setAnnouncementType(e.target.value)}
+                    className="glass-select text-xs py-1.5 h-9"
+                  >
+                    <option value="info">Info</option>
+                    <option value="warning">Warning</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+                <button
+                  onClick={handleCreateAnnouncement}
+                  disabled={creatingAnnouncement || !announcementContent.trim()}
+                  className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {creatingAnnouncement ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Megaphone className="w-3 h-3" />
+                  )}
+                  Post
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Active announcements list */}
+          <div className="divide-y divide-neutral-50">
+            {announcements.length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm text-neutral-300">
+                No active announcements for this workspace.
+              </div>
+            ) : (
+              announcements.map((ann) => (
+                <div key={ann.id} className="flex items-center justify-between px-6 py-3 gap-4">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${ANN_TYPE_CLASS[ann.type] ?? "bg-gray-50 text-gray-400"}`}>
+                      {ANN_TYPE_LABEL[ann.type] ?? ann.type}
+                    </span>
+                    <p className="text-xs text-neutral-700 truncate">{ann.content}</p>
+                    <span className="text-[10px] text-neutral-400 shrink-0">
+                      {ann.user?.full_name ?? "Unknown"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteAnnouncement(ann.id)}
+                    disabled={deletingAnnouncementId === ann.id}
+                    title="Remove announcement"
+                    className="p-1.5 rounded-md text-neutral-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40 shrink-0"
+                  >
+                    {deletingAnnouncementId === ann.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <X className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Members */}
       <div className="bg-white rounded-xl border border-neutral-200 overflow-hidden">

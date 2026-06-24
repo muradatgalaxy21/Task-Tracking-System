@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasMinimumRole } from "@/lib/rbac-utils";
-import { sendProfileVerificationEmail } from "@/lib/email";
+import { sendProfileVerificationEmail, sendEmailChangeVerificationEmail } from "@/lib/email";
 import { revalidateMembers } from "@/lib/cache";
 import { randomBytes } from "crypto";
 
@@ -29,8 +29,9 @@ export async function GET() {
 }
 
 // PATCH /api/settings/profile - Update the current user's profile.
-// Admin/Owner accounts require email verification before the change is applied.
+// Admin/Owner accounts require email verification before the name change is applied.
 // Member/Guest accounts are updated immediately.
+// Email changes always require verification regardless of role.
 export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -38,7 +39,7 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const { full_name, image, task_deadline_order } = await req.json();
+    const { full_name, image, task_deadline_order, email } = await req.json();
 
     // 1. Update image immediately if provided (bypasses email verification)
     if (image !== undefined) {
@@ -72,6 +73,67 @@ export async function PATCH(req: Request) {
 
     if (!dbUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // ---- Email change flow ----
+    // 1. Validate the new email is different from current.
+    // 2. Check that no other account already uses the new email.
+    // 3. Create an EmailChangeToken and send a verification link to the new address.
+    if (email !== undefined && email.trim() && email.trim().toLowerCase() !== (dbUser.email ?? "").toLowerCase()) {
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // Basic email format validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(normalizedEmail)) {
+        return NextResponse.json({ error: "Invalid email format." }, { status: 400 });
+      }
+
+      // Check for uniqueness — another user must not already have this email
+      const existingUser = await prisma.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { id: true },
+      });
+
+      if (existingUser && existingUser.id !== session.user.id) {
+        return NextResponse.json(
+          { error: "This email is already associated with another account." },
+          { status: 409 }
+        );
+      }
+
+      // Delete any previous pending email change tokens for this user
+      await prisma.emailChangeToken.deleteMany({
+        where: { user_id: session.user.id },
+      });
+
+      // Create a new token with 30-minute expiry
+      const token = randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+      await prisma.emailChangeToken.create({
+        data: {
+          user_id: session.user.id,
+          token,
+          new_email: normalizedEmail,
+          expires_at: expiresAt,
+        },
+      });
+
+      const appUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+      const verifyUrl = `${appUrl}/api/auth/verify-email-change?token=${token}`;
+
+      // Send verification email to the NEW email address
+      await sendEmailChangeVerificationEmail({
+        toEmail: dbUser.email!,
+        toName: dbUser.full_name || "there",
+        newEmail: normalizedEmail,
+        verifyUrl,
+      });
+
+      return NextResponse.json({
+        emailChangeVerification: true,
+        user: dbUser,
+      });
     }
 
     // If no name is provided, or the name hasn't changed, return success immediately

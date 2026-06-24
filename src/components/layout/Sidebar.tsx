@@ -41,13 +41,14 @@ type WsModalMode = "join" | "create";
 interface SidebarProps {
   isOpen?: boolean;   // mobile drawer open state
   onClose?: () => void; // called when mobile overlay or nav link is clicked
+  collapsed?: boolean; // desktop sidebar collapsed state (controlled by parent)
+  onToggleCollapse?: () => void; // callback to toggle collapsed state
 }
 
-export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
+export default function Sidebar({ isOpen = false, onClose, collapsed = false, onToggleCollapse }: SidebarProps) {
   const { profile, user, isAdmin, isOwner, refreshKey, signOut } = useAuth();
   const { workspaces, activeWorkspace, setActiveWorkspace, refreshWorkspaces } = useWorkspace();
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
   const [wsDropdownOpen, setWsDropdownOpen] = useState(false);
   const wsDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -340,7 +341,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
         {/* Collapse toggle — desktop only */}
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={onToggleCollapse}
           className="absolute -right-3 top-7 w-6 h-6 rounded-full bg-white border border-neutral-200 hidden md:flex items-center justify-center text-neutral-400 hover:text-neutral-600 hover:border-neutral-300 transition-all shadow-sm"
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >

@@ -40,8 +40,8 @@ This document provides a comprehensive breakdown of every feature, its working m
 - Assign tasks to team members with deadlines
 - Track task completion against deadlines using a multiplier penalty system
 - Record daily attendance (Present / Late / Absent)
-- Calculate composite scores: Task Performance Score (65%) + Attendance Score (35%)
-- Distribute monthly payouts proportionally based on scores (100% Performance pool)
+- Calculate composite scores: Task Performance Score (80%) + Attendance Score (20%)
+- Distribute monthly payouts proportionally based on scores
 
 **Four Founding Partners:** Murad, Abdullah, Mujtaba, Abdul Ahad (shown in Partner Presence widget)
 
@@ -434,7 +434,7 @@ A historical read-only table of ALL tasks (past and present) with their multipli
 ### 13.1 Overall Formula
 ```
 Total Score = Task Performance Score (TPS) + Attendance Score (AS)
-Max Score = 65 + 35 = 100
+Max Score = 80 + 20 = 100
 ```
 
 ### 13.2 Penalty Multiplier System
@@ -450,21 +450,26 @@ When a task is completed, the system compares `completed_at` against `max_deadli
 
 The multiplier is **permanently stored** in `multiplier_earned` at the moment of completion.
 
-### 13.3 Task Performance Score (TPS) - Max 65
+### 13.3 Task Performance Score (TPS) - Max 80
 
-**Method: Flat average of multipliers**
+**Method: Weekly Calendar-Week Averages**
 
-1. Filter to completed/Not Done tasks in the target calendar month
-2. `TPS = Flat Avg Multiplier * 65`
+1. Filter to completed tasks in the target calendar month
+2. Group tasks into 4 calendar weeks (Mon-Sun, capped at 4)
+3. For each week: `Weekly Avg = Sum(multipliers) / Number of tasks`
+4. Weeks with no tasks contribute 0
+5. `TPS = ((W1_avg + W2_avg + W3_avg + W4_avg) / 4) * 80`
 
-### 13.4 Attendance Score (AS) - Max 35
+**Week Determination:** Uses Monday-Sunday weeks. Week 1 = the week containing the 1st of the month. Partial 5th weeks overflow into Week 4.
+
+### 13.4 Attendance Score (AS) - Max 20
 
 ```
-AS = (Present Days in Month / Total Scheduled Days) * 35
+AS = (Present Days in Month / Total Scheduled Days) * 20
 ```
 
-- "Present" counts as 1.0 day; "Late" counts as 0.5 day
-- Total Scheduled Days = active days in the month (where at least one member was Present/Late)
+- Only "Present" status counts (Late and Absent do not)
+- Total Scheduled Days = 25 (24 for February)
 
 ---
 
@@ -475,24 +480,26 @@ AS = (Present Days in Month / Total Scheduled Days) * 35
 ### 14.1 Access Control
 - **Admin/Owner only** - Members see "Access Denied" screen
 
-### 14.2 Two-Tier Distribution Model
+### 14.2 Three-Tier Distribution Model
 
 | Tier | Percentage | Purpose |
 |---|---|---|
 | Treasury | 60% of Revenue | Retained by the organization |
-| Performance Pool | 40% of Revenue (100% of remaining pool) | Distributed proportionally by score |
+| Base Pool | 24% of Revenue (60% of remaining 40%) | Split equally among all members |
+| Performance Pool | 16% of Revenue (40% of remaining 40%) | Distributed proportionally by score |
 
 ### 14.3 How It Works
 
 1. Admin enters **Total Monthly Revenue** (in PKR)
 2. Clicks **Calculate Payouts**
 3. System computes TPS and AS for every member
-4. **Performance Payout** = (Member Score / Total Team Score) * Performance Pool
-5. **Final Payout** = Performance Payout
+4. **Base Payout** = Base Pool / Number of Members (equal for everyone)
+5. **Performance Payout** = (Member Score / Total Team Score) * Performance Pool
+6. **Final Payout** = Base Payout + Performance Payout
 
 ### 14.4 UI Display
-- **Pool Breakdown Cards:** Total Revenue, Treasury (60%), Performance Pool (40%)
-- **Member Table:** Columns for TPS (/65), AS (/35), Total (/100), Share %, Payout (PKR)
+- **Pool Breakdown Cards:** Total Revenue, Treasury (60%), Base Pool (24%), Performance Pool (16%)
+- **Member Table:** Columns for TPS (/80), AS (/20), Total (/100), Share %, Base (PKR), Perf. (PKR), Final (PKR)
 
 ---
 
@@ -501,14 +508,16 @@ AS = (Present Days in Month / Total Scheduled Days) * 35
 **File:** `src/app/dashboard/member/[id]/page.tsx`
 
 ### 15.1 Access Control
-- All members can view stats/profile pages for any team member in their workspace.
+- Members can view their own analytics page
+- Admin can view any member's analytics
+- Others see a "Performance Data Private" message
 
 ### 15.2 Content Sections
 
 1. **Member Header:** Avatar, full name, email, role badge, assessment period (current month)
 2. **Score Widgets (3 circular gauges):**
-   - Task Performance: X / 65 (blue)
-   - Attendance: X / 35 (green)
+   - Task Performance: X / 80 (blue)
+   - Attendance: X / 20 (green)
    - Total Score: X / 100 (red)
 3. **Attendance Summary:** Present/Late/Absent counts with total scheduled days
 4. **Task Stats Strip:** Total Tasks, Completed, Active (In Progress + In Review), Overdue
@@ -576,16 +585,12 @@ Shows all Owner/Admin partners on the dashboard with their active task count.
 2. **Workspace Switcher:** Dropdown to switch between workspaces
 3. **Navigation Links:**
    - Dashboard (`/dashboard`)
-   - Tasks (`/dashboard/tasks`)
+   - Tasks (`/dashboard`)
    - Projects (`/dashboard/ledger`)
    - Team (`/dashboard/attendance`)
-   - My Profile (`/dashboard/member/[id]`) - Quick link to current user's profile
    - Reports (`/dashboard/payout`) - Admin only
-   - Month End (`/dashboard/month-end`) - Owner only
-   - My History (`/dashboard/history`) - Finalized payouts history
-   - Settings (`/dashboard/settings`)
-4. **Members List:** Clickable list of all team members linking to their analytics pages (visible to all users)
-5. **User Footer:** Avatar initials, full name, email, role, Sign Out button, Privacy Policy link (footer)
+4. **Members List:** (Admin only) Clickable list of all team members linking to their analytics pages
+5. **User Footer:** Avatar initials, full name, email, role, Sign Out button
 6. **Collapse Toggle:** Button on the right edge to collapse sidebar to icon-only mode (56px)
 
 ### Collapsible Behavior

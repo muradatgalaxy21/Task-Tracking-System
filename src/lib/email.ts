@@ -1,6 +1,6 @@
 // Shared email helpers — server-only. Never import from client components.
 
-import { getResend, buildFrom, isEmailConfigured } from "@/lib/resend";
+import { getResend, buildFrom, buildProfilesFrom, isEmailConfigured } from "@/lib/resend";
 
 // Sends an email to a user who was @mentioned in a task comment.
 // Logs and swallows errors so a Resend outage never blocks the comment from saving.
@@ -416,3 +416,74 @@ export async function sendDeadlineApproachingEmail({
   }
 }
 
+// Sends a verification email to the NEW email address when a user requests an
+// email change. The verification link must be clicked to apply the update.
+// Uses the dedicated profiles@ sender address.
+export async function sendEmailChangeVerificationEmail({
+  toEmail,
+  toName,
+  newEmail,
+  verifyUrl,
+}: {
+  toEmail: string;
+  toName: string;
+  newEmail: string;
+  verifyUrl: string;
+}): Promise<void> {
+  // 1. Check if Resend is configured. If not, log the verification link for local dev.
+  if (!isEmailConfigured()) {
+    console.log(`[EMAIL CHANGE] Verification link for ${newEmail}: ${verifyUrl}`);
+    return;
+  }
+
+  try {
+    // 2. Send the verification email to the new address via the profiles sender.
+    const { error } = await getResend().emails.send({
+      from: buildProfilesFrom("AI & Beyond Profiles"),
+      to: newEmail,
+      subject: "Verify your new email address — AI and Beyond",
+      html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: 'Inter', Arial, sans-serif; background: #fafaf9; margin: 0; padding: 40px 20px;">
+  <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 12px; border: 1px solid #e7e5e4; overflow: hidden;">
+    <div style="background: linear-gradient(135deg, #7b2c51, #5a1d3b); padding: 20px 28px;">
+      <p style="color: white; font-size: 13px; font-weight: 700; letter-spacing: 1px; margin: 0; text-transform: uppercase;">AI & Beyond</p>
+    </div>
+    <div style="padding: 28px;">
+      <p style="font-size: 15px; color: #57534e; margin: 0 0 12px;">Hi ${toName},</p>
+      <p style="font-size: 15px; color: #292524; margin: 0 0 20px;">
+        A request was made to change your account email to <strong>${newEmail}</strong>.
+        Please verify this new email address by clicking the button below.
+      </p>
+      <p style="font-size: 13px; color: #78716c; margin: 0 0 24px;">
+        This link expires in 30 minutes and can only be used once. If you did not request this change, ignore this email.
+      </p>
+      <a href="${verifyUrl}"
+         style="display: inline-block; padding: 11px 22px; background: #7b2c51; color: white; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">
+        Verify New Email
+      </a>
+      <p style="font-size: 11px; color: #a8a29e; margin: 24px 0 0;">
+        If you did not request this change, you can safely ignore this email. Your current email will remain unchanged.
+      </p>
+    </div>
+    <div style="padding: 14px 28px; border-top: 1px solid #e7e5e4;">
+      <p style="font-size: 11px; color: #a8a29e; margin: 0;">AI & Beyond internal platform — automated security notification</p>
+    </div>
+  </div>
+</body>
+</html>
+      `,
+    });
+    if (error) {
+      // 3. Log Resend errors without throwing so the API route can still respond.
+      console.error("sendEmailChangeVerificationEmail failed:", error);
+    }
+  } catch (err) {
+    console.error("sendEmailChangeVerificationEmail failed:", err);
+  }
+}

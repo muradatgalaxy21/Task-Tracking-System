@@ -27,12 +27,24 @@ export function getResend(): Resend {
 // Verified sending domain/address, e.g. "notifications@yourdomain.com".
 // Falls back to Resend's shared sandbox address so local dev works without
 // a verified domain (sandbox mail only delivers to the account owner).
-const EMAIL_FROM_ADDRESS = process.env.EMAIL_FROM || "onboarding@resend.dev";
+const EMAIL_FROM_ADDRESS = process.env.EMAIL_FROM || "tasks@aiandbeyondsolutions.site";
+
+// Dedicated profiles sender address for account-related emails
+// (email change verification, profile updates). Uses a separate env var
+// so the sending identity can differ from transactional notifications.
+const PROFILES_EMAIL_FROM_ADDRESS =
+  process.env.PROFILES_EMAIL_FROM || "profiles@aiandbeyondsolutions.online";
 
 // Builds a "Display Name <address>" From header, reusing the configured
 // sending address with a per-email-type display name.
 export function buildFrom(displayName: string): string {
   return `${displayName} <${EMAIL_FROM_ADDRESS}>`;
+}
+
+// Builds a "Display Name <address>" From header using the profiles address.
+// Used for account-related emails such as email change verification.
+export function buildProfilesFrom(displayName: string): string {
+  return `${displayName} <${PROFILES_EMAIL_FROM_ADDRESS}>`;
 }
 
 // True when RESEND_API_KEY is set. Senders fall back to logging the email

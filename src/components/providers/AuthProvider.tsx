@@ -104,7 +104,7 @@ function AuthProviderInner({ children }: { children: ReactNode }) {
 
           const updated: NextAuthUser = {
             id: user.id,
-            email: user.email,
+            email: data.email || user.email,
             full_name: data.full_name,
             role: data.role || "Member",
             image: data.image || null,
