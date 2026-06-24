@@ -182,6 +182,51 @@ async function main() {
       }
     }
 
+    // 1. Check if the EmailChangeToken table exists in the database.
+    // 2. Create the EmailChangeToken table if it is missing.
+    // 3. Create a unique index on the token field.
+    if (!tables.includes("EmailChangeToken")) {
+      const createEmailChangeToken = `
+        CREATE TABLE "EmailChangeToken" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "user_id" TEXT NOT NULL,
+          "token" TEXT NOT NULL,
+          "new_email" TEXT NOT NULL,
+          "expires_at" DATETIME NOT NULL,
+          "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+      const createIdxToken = `CREATE UNIQUE INDEX "EmailChangeToken_token_key" ON "EmailChangeToken"("token")`;
+
+      await runSQL(createEmailChangeToken, "Create EmailChangeToken table");
+      await runSQL(createIdxToken, "Create unique index on EmailChangeToken(token)");
+    } else {
+      console.log("EmailChangeToken table already exists.");
+    }
+
+    // 1. Check if the Announcement table exists in the database.
+    // 2. Create the Announcement table if it is missing with foreign key constraints.
+    if (!tables.includes("Announcement")) {
+      const createAnnouncement = `
+        CREATE TABLE "Announcement" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "workspace_id" TEXT,
+          "user_id" TEXT NOT NULL,
+          "content" TEXT NOT NULL,
+          "type" TEXT NOT NULL DEFAULT 'info',
+          "active" BOOLEAN NOT NULL DEFAULT true,
+          "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "expires_at" DATETIME,
+          CONSTRAINT "Announcement_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "Workspace" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+          CONSTRAINT "Announcement_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `;
+
+      await runSQL(createAnnouncement, "Create Announcement table");
+    } else {
+      console.log("Announcement table already exists.");
+    }
+
     console.log("Migration completed successfully.");
 
   } catch (err) {
