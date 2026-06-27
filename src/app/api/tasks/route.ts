@@ -259,6 +259,7 @@ export async function PATCH(req: Request) {
       estimated_hours,
       actual_hours,
       attachments,
+      max_deadline,
     } = body;
 
     if (!task_id) {
@@ -269,7 +270,7 @@ export async function PATCH(req: Request) {
 
     const currentTask = await prisma.taskLedger.findUnique({
       where: { task_id },
-      select: { title: true, status: true, workspace_id: true, assignee_id: true, review_submitted_at: true },
+      select: { title: true, status: true, workspace_id: true, assignee_id: true, review_submitted_at: true, max_deadline: true },
     });
 
     if (!currentTask) {
@@ -304,6 +305,85 @@ export async function PATCH(req: Request) {
         { error: "Only Managers and above can edit the task title" },
         { status: 403 }
       );
+    }
+
+    // Deadline editing checks: Managers request approval, Admins edit directly
+    if (max_deadline !== undefined) {
+      // 1. Verify user role: Only Managers and above can edit task deadlines.
+      if (!isManager) {
+        return NextResponse.json(
+          { error: "Only Managers and above can edit task deadlines" },
+          { status: 403 }
+        );
+      }
+
+      // 2. Separate logic: Managers must route through the approval system, Admins update directly.
+      if (!isAdmin) {
+        // 3. Prevent duplicate requests: Query database for any existing pending requests for this task.
+        const existingPending = await prisma.notification.findFirst({
+          where: {
+            task_id,
+            type: "deadline_request",
+            message: { contains: `"status":"pending"` },
+          },
+        });
+        if (existingPending) {
+          return NextResponse.json(
+            { error: "A deadline change request is already pending for this task." },
+            { status: 400 }
+          );
+        }
+
+        // 4. Retrieve requester identity: Fetch the Manager's name/email from the database.
+        const requester = await prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { full_name: true, email: true },
+        });
+        const requesterName = requester?.full_name || requester?.email || "Manager";
+
+        // 5. Query workspace stakeholders: Retrieve all members and select Owners/Admins via effective roles.
+        if (currentTask.workspace_id) {
+          const members = await prisma.workspaceMember.findMany({
+            where: { workspace_id: currentTask.workspace_id },
+            include: { user: true },
+          });
+
+          const adminsAndOwners = members.filter((m) => {
+            const effRole = resolveEffectiveRole(m.user.role, m.role);
+            return effRole === "Admin" || effRole === "Owner";
+          });
+
+          // 6. Create notifications: Store requests with custom JSON metadata and write them to the DB.
+          if (adminsAndOwners.length > 0) {
+            const payload = JSON.stringify({
+              request_type: "deadline_change",
+              task_id,
+              task_title: currentTask.title,
+              proposed_deadline: max_deadline,
+              requester_name: requesterName,
+              requester_id: session.user.id,
+              status: "pending",
+            });
+
+            await prisma.notification.createMany({
+              data: adminsAndOwners.map((admin) => ({
+                user_id: admin.user_id,
+                task_id,
+                task_title: currentTask.title,
+                from_name: requesterName,
+                type: "deadline_request",
+                message: payload,
+              })),
+            });
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          pendingRequest: true,
+          message: "Time updation will be completed after accepted by owner/admin.",
+        });
+      }
     }
 
     // Metadata editing (description, notes, etc.) requires at least Member rank,
@@ -391,6 +471,7 @@ export async function PATCH(req: Request) {
       ...(estimated_hours !== undefined ? { estimated_hours: estimated_hours !== null ? Number(estimated_hours) : null } : {}),
       ...(actual_hours !== undefined ? { actual_hours: actual_hours !== null ? Number(actual_hours) : null } : {}),
       ...(attachments !== undefined ? { attachments } : {}),
+      ...(max_deadline !== undefined && isAdmin ? { max_deadline: new Date(max_deadline) } : {}),
     };
 
     let updatedTask: Awaited<ReturnType<typeof prisma.taskLedger.update>>;
@@ -434,6 +515,36 @@ export async function PATCH(req: Request) {
     } else {
       // No status change — plain update with no associated activity entry needed
       updatedTask = await prisma.taskLedger.update({ where: { task_id }, data: taskUpdateData });
+    }
+
+    // Audit/activity log for direct deadline change (Admin/Owner only)
+    if (max_deadline !== undefined && isAdmin && new Date(max_deadline).getTime() !== new Date(currentTask.max_deadline).getTime()) {
+      const editor = await prisma.user.findUnique({ where: { id: session.user.id }, select: { full_name: true, email: true } });
+      const actorName = editor?.full_name || editor?.email || "Unknown";
+
+      // 1. Log the direct deadline change inside the TaskActivity table.
+      await prisma.taskActivity.create({
+        data: {
+          task_id,
+          user_id: session.user.id,
+          actor_name: actorName,
+          type: "field_update",
+          content: `changed deadline to ${new Date(max_deadline).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}`,
+          metadata: JSON.stringify({ old_deadline: currentTask.max_deadline, new_deadline: max_deadline }),
+        },
+      });
+
+      // 2. Dispatch a record to audit logs for admin audit trails.
+      writeAuditLog({
+        workspace_id: currentTask.workspace_id,
+        user_id: session.user.id,
+        actor_name: actorName,
+        actor_email: editor?.email,
+        event_type: "task_edited",
+        entity_id: task_id,
+        entity_name: currentTask.title,
+        metadata: { field: "max_deadline", old_value: currentTask.max_deadline.toISOString(), new_value: new Date(max_deadline).toISOString() },
+      });
     }
 
     // Audit log for title edit — compare against old title captured before the update

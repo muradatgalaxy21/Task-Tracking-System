@@ -17,6 +17,7 @@ export default function NotificationsBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -45,6 +46,51 @@ export default function NotificationsBell() {
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     } catch (err) {
       console.error("Failed to mark notifications as read:", err);
+    }
+  };
+
+  // 3. Process approval or rejection actions for manager-initiated deadline requests
+  const handleRequestAction = async (notificationId: string, action: "approve" | "reject") => {
+    setActionLoading(notificationId);
+    try {
+      // 1. Send the response action request to the server API endpoint.
+      const res = await fetch("/api/tasks/respond-deadline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notification_id: notificationId, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to respond to request");
+
+      // 2. Optimistically update local notification payload status to mirror changes.
+      setNotifications((prev) =>
+        prev.map((n) => {
+          if (n.id === notificationId) {
+            try {
+              const details = JSON.parse(n.message);
+              return {
+                ...n,
+                message: JSON.stringify({ ...details, status: action === "approve" ? "approved" : "rejected" }),
+              };
+            } catch (e) {
+              return n;
+            }
+          }
+          return n;
+        })
+      );
+
+      // 3. Alert the user of success and reload page to synchronize updated tasks state.
+      alert(`Request has been successfully ${action === "approve" ? "approved" : "rejected"}.`);
+      if (action === "approve") {
+        window.location.reload();
+      } else {
+        fetchNotifications();
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to handle request");
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -120,26 +166,99 @@ export default function NotificationsBell() {
                 <p className="text-[10px] text-neutral-400">No new notifications here.</p>
               </div>
             ) : (
-              notifications.slice(0, 20).map((n) => (
-                <div
-                  key={n.id}
-                  className={`px-4 py-3 hover:bg-neutral-50/60 transition-colors ${
-                    !n.read ? "bg-warm-50/30" : ""
-                  }`}
-                >
-                  <p className="text-xs text-neutral-700 leading-relaxed font-normal">
-                    {n.message}
-                  </p>
-                  {n.task_title && (
-                    <div className="text-[10px] text-neutral-500 mt-1 bg-neutral-100 px-1.5 py-0.5 rounded truncate inline-block max-w-full font-mono">
-                      Task: {n.task_title}
+              notifications.slice(0, 20).map((n) => {
+                let isRequest = n.type === "deadline_request";
+                let requestDetails = null;
+                if (isRequest) {
+                  try {
+                    requestDetails = JSON.parse(n.message);
+                  } catch (e) {
+                    isRequest = false;
+                  }
+                }
+
+                if (isRequest && requestDetails) {
+                  const formattedProposed = new Date(requestDetails.proposed_deadline).toLocaleString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit"
+                  });
+
+                  return (
+                    <div
+                      key={n.id}
+                      className={`px-4 py-3 hover:bg-neutral-50/60 transition-colors relative ${
+                        !n.read ? "bg-warm-50/30" : ""
+                      }`}
+                    >
+                      <div className="text-xs text-neutral-700 leading-relaxed font-normal">
+                        <span className="font-semibold text-neutral-800">{requestDetails.requester_name}</span> requested to change deadline to <span className="font-semibold text-warm-600">{formattedProposed}</span>
+                      </div>
+                      {n.task_title && (
+                        <div className="text-[10px] text-neutral-500 mt-1 bg-neutral-100 px-1.5 py-0.5 rounded truncate inline-block max-w-full font-mono">
+                          Task: {n.task_title}
+                        </div>
+                      )}
+                      
+                      {requestDetails.status === "pending" ? (
+                        <div className="flex items-center gap-2 mt-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRequestAction(n.id, "approve");
+                            }}
+                            disabled={actionLoading === n.id}
+                            className="px-2 py-1 bg-emerald-600 text-white rounded text-[10px] font-semibold hover:bg-emerald-700 disabled:opacity-50 cursor-pointer transition-colors"
+                          >
+                            {actionLoading === n.id ? "Accepting..." : "Accept"}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRequestAction(n.id, "reject");
+                            }}
+                            disabled={actionLoading === n.id}
+                            className="px-2 py-1 bg-neutral-100 text-neutral-700 border border-neutral-200 rounded text-[10px] font-semibold hover:bg-neutral-200 disabled:opacity-50 cursor-pointer transition-colors"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      ) : (
+                        <div className={`text-[10px] mt-1.5 font-semibold ${requestDetails.status === "approved" ? "text-emerald-600" : "text-red-500"}`}>
+                          Request {requestDetails.status === "approved" ? "Approved" : "Rejected"}
+                        </div>
+                      )}
+
+                      <p className="text-[9px] text-neutral-300 mt-1 font-medium">
+                        {formatRelativeTime(n.created_at)}
+                      </p>
                     </div>
-                  )}
-                  <p className="text-[9px] text-neutral-300 mt-1 font-medium">
-                    {formatRelativeTime(n.created_at)}
-                  </p>
-                </div>
-              ))
+                  );
+                }
+
+                return (
+                  <div
+                    key={n.id}
+                    className={`px-4 py-3 hover:bg-neutral-50/60 transition-colors ${
+                      !n.read ? "bg-warm-50/30" : ""
+                    }`}
+                  >
+                    <p className="text-xs text-neutral-700 leading-relaxed font-normal">
+                      {n.message}
+                    </p>
+                    {n.task_title && (
+                      <div className="text-[10px] text-neutral-500 mt-1 bg-neutral-100 px-1.5 py-0.5 rounded truncate inline-block max-w-full font-mono">
+                        Task: {n.task_title}
+                      </div>
+                    )}
+                    <p className="text-[9px] text-neutral-300 mt-1 font-medium">
+                      {formatRelativeTime(n.created_at)}
+                    </p>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

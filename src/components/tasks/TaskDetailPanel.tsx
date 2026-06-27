@@ -352,6 +352,100 @@ function DeleteButton({
   );
 }
 
+// Inline deadline editor (Manager+)
+interface DeadlineEditorProps {
+  value: string;
+  canEdit: boolean;
+  onSave: (value: string) => Promise<void>;
+  saving: boolean;
+}
+
+function DeadlineEditor({ value, canEdit, onSave, saving }: DeadlineEditorProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    if (value && editing) {
+      const d = new Date(value);
+      const tzOffset = d.getTimezoneOffset() * 60000;
+      const localTime = new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+      setDraft(localTime);
+    }
+  }, [value, editing]);
+
+  const handleCommit = async () => {
+    if (!draft) return;
+    try {
+      const utcString = new Date(draft).toISOString();
+      await onSave(utcString);
+      setEditing(false);
+    } catch (e) {
+      alert("Invalid date selection");
+    }
+  };
+
+  if (!canEdit) {
+    return (
+      <span>
+        {new Date(value).toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })}
+      </span>
+    );
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-2">
+        <input
+          type="datetime-local"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          className="glass-input text-xs py-0.5 px-2 w-48 focus:outline-none focus:border-warm-400"
+          disabled={saving}
+          autoFocus
+        />
+        <button
+          onClick={handleCommit}
+          disabled={saving}
+          className="btn-primary text-[10px] py-1 px-2 font-medium"
+        >
+          Save
+        </button>
+        <button
+          onClick={() => setEditing(false)}
+          className="btn-ghost text-[10px] py-1 px-2"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      className="flex items-center gap-1 text-xs text-neutral-700 hover:text-warm-400 font-medium group transition-colors cursor-pointer text-left"
+      title="Click to edit deadline"
+    >
+      <span>
+        {new Date(value).toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })}
+      </span>
+      <Edit3 size={11} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+    </button>
+  );
+}
+
 // ---- Priority class map ---- //
 const PRIORITY_CLASS: Record<string, string> = {
   Urgent: "priority-urgent",
@@ -440,6 +534,30 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
         onUpdate();
       } catch (err) {
         alert(err instanceof Error ? err.message : "Failed to save");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [task.task_id, onUpdate]
+  );
+
+  const saveDeadline = useCallback(
+    async (newDeadline: string) => {
+      setSaving(true);
+      try {
+        const res = await fetch("/api/tasks", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task_id: task.task_id, max_deadline: newDeadline }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Save failed");
+        if (data.pendingRequest) {
+          alert("Time updation will be completed after accepted by owner/admin.");
+        }
+        onUpdate();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Failed to save deadline");
       } finally {
         setSaving(false);
       }
@@ -646,16 +764,15 @@ export default function TaskDetailPanel({ task, members, onClose, onUpdate }: Ta
                     showDeadlineColor ? deadline.colorClass : "text-neutral-700"
                   }`}
                 >
-                  {isOverdue ? <AlertTriangle size={11} /> : <Clock size={11} />}
-                  {new Date(task.max_deadline).toLocaleString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
+                  {isOverdue ? <AlertTriangle size={11} className="shrink-0" /> : <Clock size={11} className="shrink-0" />}
+                  <DeadlineEditor
+                    value={task.max_deadline}
+                    canEdit={isWorkspaceManager || isWorkspaceAdmin}
+                    onSave={saveDeadline}
+                    saving={saving}
+                  />
                   {showDeadlineColor && (
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${deadline.bgClass} ${deadline.colorClass}`}>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${deadline.bgClass} ${deadline.colorClass} shrink-0`}>
                       {deadline.label}
                     </span>
                   )}
