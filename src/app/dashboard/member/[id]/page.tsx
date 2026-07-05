@@ -20,6 +20,7 @@ import {
   calculateTotalScore,
   getActiveDaysInMonth,
 } from "@/lib/calculations";
+import { monthsBetween, addMonths, compareMonths, type MonthPoint } from "@/lib/close-range";
 import {
   User,
   Clock,
@@ -37,20 +38,24 @@ export default function MemberPage() {
   const [tasks, setTasks] = useState<TaskLedger[]>([]);
   const [attendance, setAttendance] = useState<DailyAttendance[]>([]);
   const [allWorkspaceAttendance, setAllWorkspaceAttendance] = useState<DailyAttendance[]>([]);
+  const [lastClosedEnd, setLastClosedEnd] = useState<MonthPoint | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch member profile, workspace tasks (filtered to member), member attendance, and all
-  // workspace attendance (needed to compute active days in month for AS denominator).
+  // Fetch member profile, workspace tasks (filtered to member), member attendance, all
+  // workspace attendance (needed to compute active days in month for AS denominator),
+  // and the boundary of the most recent Finalized close (the cumulative window starts
+  // right after it; before any close exists, the window covers all available data).
   const fetchData = useCallback(async () => {
     if (!activeWorkspace?.id) return;
     try {
       setLoading(true);
       const workspaceId = activeWorkspace.id;
 
-      const [memberRes, tasksRes, wsAttendanceRes] = await Promise.all([
+      const [memberRes, tasksRes, wsAttendanceRes, lastClosedRes] = await Promise.all([
         fetch(`/api/members?id=${memberId}`),
         fetch(`/api/tasks?workspaceId=${workspaceId}`),
         fetch(`/api/attendance?workspaceId=${workspaceId}`), // full workspace attendance — filter client-side
+        fetch(`/api/monthly-close/last-closed?workspaceId=${workspaceId}`),
       ]);
 
       if (!memberRes.ok) throw new Error("Failed to fetch member");
@@ -58,12 +63,14 @@ export default function MemberPage() {
       const memberData = await memberRes.json();
       const allTasks = tasksRes.ok ? await tasksRes.json() : [];
       const wsAttendanceData = wsAttendanceRes.ok ? await wsAttendanceRes.json() : [];
+      const lastClosedData = lastClosedRes.ok ? await lastClosedRes.json() : { lastClosedEnd: null };
 
       setMember(memberData);
       setTasks(allTasks.filter((t: { assignee_id: string }) => t.assignee_id === memberId));
       // Filter workspace attendance to this member's records only
       setAttendance(wsAttendanceData.filter((a: { user_id: string }) => a.user_id === memberId));
       setAllWorkspaceAttendance(wsAttendanceData);
+      setLastClosedEnd(lastClosedData.lastClosedEnd ?? null);
     } catch (err) {
       console.error("Failed to fetch member data:", err);
     } finally {
@@ -109,13 +116,7 @@ export default function MemberPage() {
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
-
-  // Active days = unique dates this month where at least one workspace member was Present
-  const activeDays = getActiveDaysInMonth(allWorkspaceAttendance, currentYear, currentMonth);
-
-  const tpsResult = calculateTPS(tasks, currentYear, currentMonth);
-  const asScore = calculateAS(attendance, currentYear, currentMonth, activeDays);
-  const totalScore = calculateTotalScore(tpsResult.score, asScore);
+  const currentPoint: MonthPoint = { year: currentYear, month: currentMonth };
 
   // Safe date-string parser — slices ISO prefix directly to avoid timezone shifts.
   // Turso returns dates as full ISO strings (e.g. "2024-05-28T19:00:00.000Z");
@@ -126,15 +127,59 @@ export default function MemberPage() {
     return { year: yr, month: mo - 1, key: `${yr}-${String(mo).padStart(2, "0")}` };
   };
 
-  const currentMonthAttendance = attendance.filter((a) => {
-    const { year, month } = isoYearMonth(a.date);
-    return year === currentYear && month === currentMonth;
+  // Cumulative open window: from right after the last Finalized close through the
+  // current month. If nothing has ever been closed, fall back to the earliest month
+  // with any task/attendance activity so old unclosed data is included too.
+  let windowStart: MonthPoint;
+  if (lastClosedEnd) {
+    windowStart = addMonths(lastClosedEnd, 1);
+  } else {
+    const activityDates = [
+      ...tasks.map((t) => new Date(t.created_at)),
+      ...attendance.map((a) => new Date(a.date)),
+    ];
+    windowStart =
+      activityDates.length > 0
+        ? (() => {
+            const earliest = new Date(Math.min(...activityDates.map((d) => d.getTime())));
+            return { year: earliest.getFullYear(), month: earliest.getMonth() };
+          })()
+        : currentPoint;
+  }
+  if (compareMonths(windowStart, currentPoint) > 0) windowStart = currentPoint;
+  const openMonths = monthsBetween(windowStart, currentPoint);
+
+  // Score each open month independently (same formulas as a monthly close), then
+  // average — mirrors how a cumulative MonthlyClose computes TPS/AS across its span.
+  const monthlyScores = openMonths.map(({ year, month }) => {
+    const activeDaysForMonth = getActiveDaysInMonth(allWorkspaceAttendance, year, month);
+    return {
+      year,
+      month,
+      tps: calculateTPS(tasks, year, month).score,
+      as: calculateAS(attendance, year, month, activeDaysForMonth),
+      activeDays: activeDaysForMonth,
+    };
   });
-  const rawPresentDays = currentMonthAttendance.filter((a) => a.status === "Present").length;
-  const lateDays = currentMonthAttendance.filter((a) => a.status === "Late").length;
-  const absentDays = currentMonthAttendance.filter((a) => a.status === "Absent").length;
+  const avg = (nums: number[]) => (nums.length > 0 ? nums.reduce((s, n) => s + n, 0) / nums.length : 0);
+  const tpsScore = Math.round(avg(monthlyScores.map((m) => m.tps)) * 100) / 100;
+  const asScore = Math.round(avg(monthlyScores.map((m) => m.as)) * 100) / 100;
+  const totalScore = calculateTotalScore(tpsScore, asScore);
+
+  // Current-month-only TPS detail (weekly breakdown, task table) — unaffected by
+  // the cumulative window since a "week of month" concept only applies within one month.
+  const tpsResult = calculateTPS(tasks, currentYear, currentMonth);
+
+  // Cumulative attendance tally across the whole open window, for the summary boxes
+  const openWindowAttendance = attendance.filter((a) => {
+    const { year, month } = isoYearMonth(a.date);
+    return openMonths.some((m) => m.year === year && m.month === month);
+  });
+  const rawPresentDays = openWindowAttendance.filter((a) => a.status === "Present").length;
+  const lateDays = openWindowAttendance.filter((a) => a.status === "Late").length;
+  const absentDays = openWindowAttendance.filter((a) => a.status === "Absent").length;
   const presentDays = rawPresentDays + lateDays * 0.5;
-  const totalScheduled = activeDays;
+  const totalScheduled = monthlyScores.reduce((s, m) => s + m.activeDays, 0);
 
   // Group all attendance records by month for historical display
   const attendanceByMonth = attendance.reduce<Record<string, { present: number; late: number; absent: number; activeDays: number }>>((acc, record) => {
@@ -162,6 +207,12 @@ export default function MemberPage() {
   );
 
   const monthName = now.toLocaleString("default", { month: "long", year: "numeric" });
+  const monthLabel = (m: MonthPoint) =>
+    new Date(m.year, m.month, 1).toLocaleString("default", { month: "long", year: "numeric" });
+  const periodLabel =
+    openMonths.length <= 1
+      ? monthName
+      : `${monthLabel(openMonths[0])} - ${monthLabel(openMonths[openMonths.length - 1])} (cumulative)`;
 
   const initials = member.full_name
     ? member.full_name
@@ -199,7 +250,7 @@ export default function MemberPage() {
           <p className="text-[10px] text-neutral-400 uppercase font-medium tracking-wider">
             Assessment Period
           </p>
-          <p className="text-sm text-neutral-600 font-medium">{monthName}</p>
+          <p className="text-sm text-neutral-600 font-medium">{periodLabel}</p>
         </div>
       </div>
 
@@ -217,10 +268,14 @@ export default function MemberPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <ScoreWidget
           label="Task Performance"
-          score={tpsResult.score}
+          score={tpsScore}
           maxScore={65}
           color="#337ea9"
-          subtitle={`${tpsResult.weeklyBreakdown.filter((w) => w.tasks.length > 0).length} active weeks this month`}
+          subtitle={
+            openMonths.length > 1
+              ? `Avg across ${openMonths.length} open months`
+              : `${tpsResult.weeklyBreakdown.filter((w) => w.tasks.length > 0).length} active weeks this month`
+          }
         />
         <ScoreWidget
           label="Attendance"
@@ -246,13 +301,13 @@ export default function MemberPage() {
             Attendance History
           </h3>
           <span className="text-[10px] text-neutral-400 font-normal">
-            {totalScheduled} active days this month
+            {totalScheduled} active days in open period
           </span>
         </div>
 
-        {/* Current month highlight */}
+        {/* Cumulative open-period highlight */}
         <div className="px-5 py-4 bg-neutral-50/60 border-b border-neutral-100">
-          <p className="text-[10px] text-neutral-400 uppercase font-medium tracking-wider mb-3">{monthName}</p>
+          <p className="text-[10px] text-neutral-400 uppercase font-medium tracking-wider mb-3">{periodLabel}</p>
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center">
               <p className="text-xl font-bold text-green-600">{rawPresentDays}</p>

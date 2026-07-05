@@ -50,7 +50,8 @@ venv/
 .venv/
 
 # AI configs
-.claude/
+.claude/settings.local.json
+.claude/settings*.json
 
 #Reference UI images
 /reference-image/

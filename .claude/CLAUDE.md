@@ -28,6 +28,7 @@ Copy `.env.example` to `.env.local`. Minimum required variables:
 - `DATABASE_URL` — SQLite file path, e.g. `file:./dev.db`
 - `NEXTAUTH_SECRET` — any random string
 - `NEXTAUTH_URL` — `http://localhost:3000` for local dev
+- `BLOB_READ_WRITE_TOKEN` — required for Vercel Blob file uploads
 - SMTP variables are required for magic-link login and email notifications; Google/GitHub OAuth are optional (omit to disable those buttons)
 
 ## Architecture
@@ -169,10 +170,9 @@ Server-side read cache backed by Next.js `unstable_cache` (persists across serve
 
 ## Code Conventions
 
-- **Comments:** Provide explanatory comments at every functional step involving data manipulation (1-5 clear points) directly next to the relevant line, not grouped at the bottom.
-- **Formatting:** No emojis anywhere in code or comment strings. Keep tone professional.
-- **Server/Client Separation:** Import server-only utilities (`requireRole`, Prisma) only in API routes or Server Components — never in `"use client"` files. Use `src/lib/rbac-utils.ts` for client components.
-- **Data Fetching:** `export const dynamic = "force-dynamic"` is required on every API route that reads session data.
-- **UI/Aesthetics:** The UI should be premium. Avoid generic placeholders and plain colors. Use tailored HSL palettes, glassmorphism, and subtle micro-animations.
-- **Error Handling:** Wrap data operations and external calls in `try-catch` blocks with descriptive error messages.
-- **Virtual Environments:** Always use a virtual environment named `project-name-venv` if running Python scripts, and use `pathlib` for all file system operations.
+- No emojis anywhere in code or comment strings.
+- Comments belong immediately next to the relevant line, not grouped at the bottom of a function.
+- Import server-only utilities (`requireRole`, Prisma) only in API routes or Server Components — never in `"use client"` files. Use `src/lib/rbac-utils.ts` for client components.
+- `export const dynamic = "force-dynamic"` is required on every API route that reads session data.
+- AI agents will never add themselves as collaborators in GitHub.
+

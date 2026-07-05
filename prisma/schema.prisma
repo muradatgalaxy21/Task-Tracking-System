@@ -324,16 +324,21 @@ model Announcement {
 }
 
 // Stores each owner-initiated month-end close for a workspace.
+// A close now spans a range of calendar months (start_month/start_year through
+// month/year, which is kept as the range's END month for backward compatibility
+// with existing ordering/display code). Single-month closes have start == end.
 // "Draft" while owner reviews scores; "Finalized" once locked and salaries recorded.
 model MonthlyClose {
   id             String    @id @default(uuid())
   workspace_id   String
-  label          String    // e.g. "May 2026"
-  month          Int       // 0-indexed (0=Jan, 11=Dec)
-  year           Int
+  label          String    // e.g. "May 2026" or "Feb-May 2026" for a multi-month span
+  start_month    Int       @default(0)  // 0-indexed (0=Jan, 11=Dec) — first month included
+  start_year     Int       @default(2024)
+  month          Int       // 0-indexed — last (end) month included
+  year           Int       // end year
   period_end     DateTime  // actual calendar date the close was run
   total_revenue  Float     @default(0)
-  scheduled_days Int       @default(25) // working days counted in this period
+  scheduled_days Int       @default(25) // total working days counted across the whole span
   // "Draft" | "Finalized"
   status         String    @default("Draft")
   created_by     String    // user_id of the Owner who ran the close
@@ -342,8 +347,6 @@ model MonthlyClose {
 
   workspace Workspace             @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   payouts   MemberMonthlyPayout[]
-
-  @@unique([workspace_id, month, year])
 }
 
 // Stores each member's finalized score and payout for a given MonthlyClose.
@@ -362,6 +365,9 @@ model MemberMonthlyPayout {
   scheduled_days Int     @default(25)
   // JSON string: { [taskId]: overrideMultiplier } — non-destructive override applied at close time
   multiplier_overrides String @default("{}")
+  // JSON string: per-month breakdown array [{year,month,tpsScore,asScore,totalScore,presentDays,scheduledDays}]
+  // powering the close preview/audit view when a close spans multiple months
+  monthly_breakdown String @default("[]")
   created_at   DateTime @default(now())
 
   monthly_close MonthlyClose @relation(fields: [close_id], references: [id], onDelete: Cascade)

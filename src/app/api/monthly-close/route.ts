@@ -2,7 +2,24 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole, hasMinimumRole } from "@/lib/rbac";
 import { calculatePayouts, countWeekdaysInMonth } from "@/lib/calculations";
-import { computeMemberScores } from "@/lib/monthly-close";
+import { computeMemberScores, getWorkspaceCloseContext } from "@/lib/monthly-close";
+import {
+  monthsBetween,
+  compareMonths,
+  determineAutoCloseEnd,
+  determineAutoCloseStart,
+  getMonthKey,
+  type MonthPoint,
+} from "@/lib/close-range";
+
+const MONTH_NAMES = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
+];
+
+function monthLabel(m: MonthPoint) {
+  return `${MONTH_NAMES[m.month]} ${m.year}`;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -47,19 +64,27 @@ export async function GET(req: Request) {
 }
 
 // POST /api/monthly-close
-// Creates a new Draft monthly close for a workspace. Owner only.
-// Body: { workspaceId, month, year, totalRevenue, scheduledDays? }
-// Calculates scores for all members and stores draft payouts.
+// Creates a new Draft monthly close for a workspace. Owner only. The close can span
+// multiple unclosed calendar months — a cumulative close.
+// Body: { workspaceId, mode: "auto" | "manual", startMonth?, startYear?, endMonth?, endYear?, totalRevenue }
+//   - mode "auto": span is detected automatically (from the month after the last
+//     Finalized close, or the earliest activity month if none, through the current
+//     month — included only when today is on/after the 28th).
+//   - mode "manual": startMonth/startYear/endMonth/endYear are required. Any month
+//     already covered by an existing close (Draft or Finalized) is rejected.
+// Each month in the span is scored independently (TPS/AS as before); the close's
+// final TPS/AS is the mean of the per-month scores. This is a Draft — nothing is
+// locked until a separate PATCH { action: "finalize" } call.
 export async function POST(req: Request) {
   const { session, error } = await requireRole("Owner");
   if (error) return error;
 
   try {
     const body = await req.json();
-    const { workspaceId, month, year, totalRevenue, scheduledDays } = body;
+    const { workspaceId, mode, startMonth, startYear, endMonth, endYear, totalRevenue } = body;
 
-    if (!workspaceId || month == null || !year) {
-      return NextResponse.json({ error: "workspaceId, month and year are required" }, { status: 400 });
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
     }
 
     // Global Owner always has access; otherwise verify workspace membership
@@ -73,23 +98,57 @@ export async function POST(req: Request) {
       }
     }
 
-    // Prevent duplicate close for the same month/year/workspace
-    const existing = await prisma.monthlyClose.findUnique({
-      where: { workspace_id_month_year: { workspace_id: workspaceId, month, year } },
-    });
-    if (existing) {
+    const { closedMonths, lastFinalizedEnd, earliestActivityMonth } =
+      await getWorkspaceCloseContext(workspaceId);
+
+    let start: MonthPoint;
+    let end: MonthPoint;
+
+    if (mode === "manual") {
+      if (startMonth == null || startYear == null || endMonth == null || endYear == null) {
+        return NextResponse.json(
+          { error: "startMonth, startYear, endMonth and endYear are required for a manual close" },
+          { status: 400 }
+        );
+      }
+      start = { year: startYear, month: startMonth };
+      end = { year: endYear, month: endMonth };
+      if (compareMonths(end, start) < 0) {
+        return NextResponse.json({ error: "End month must be on or after the start month" }, { status: 400 });
+      }
+    } else {
+      end = determineAutoCloseEnd();
+      start = determineAutoCloseStart(lastFinalizedEnd, earliestActivityMonth, end);
+      if (compareMonths(start, end) > 0) {
+        return NextResponse.json(
+          { error: "Everything up to the current close cutoff has already been closed." },
+          { status: 409 }
+        );
+      }
+    }
+
+    const months = monthsBetween(start, end);
+
+    // Reject any overlap with an existing close, regardless of mode or status
+    const overlapping = months.map(getMonthKey).filter((key) => closedMonths.has(key));
+    if (overlapping.length > 0) {
       return NextResponse.json(
-        { error: "A close already exists for this month. Use PATCH to update it." },
+        { error: `These months are already covered by an existing close: ${overlapping.join(", ")}` },
         { status: 409 }
       );
     }
 
-    // Calculate weekdays in the month up to today as default scheduled_days
+    // Weekdays-in-month per month, capped at "now" only for the current calendar
+    // month if it's included (a still-running month can't count its unworked days yet).
     const now = new Date();
-    const periodEnd = new Date(year, month + 1, 0); // last day of the target month
-    const effectivePeriodEnd = periodEnd < now ? periodEnd : now;
-    const computedScheduledDays =
-      scheduledDays ?? countWeekdaysInMonth(year, month, effectivePeriodEnd);
+    const scheduledDaysByMonth: Record<string, number> = {};
+    let periodEnd = new Date(end.year, end.month + 1, 0); // last day of the end month
+    for (const m of months) {
+      const isCurrentMonth = m.year === now.getFullYear() && m.month === now.getMonth();
+      const monthEnd = isCurrentMonth ? now : new Date(m.year, m.month + 1, 0);
+      if (isCurrentMonth) periodEnd = now < periodEnd ? now : periodEnd;
+      scheduledDaysByMonth[getMonthKey(m)] = countWeekdaysInMonth(m.year, m.month, monthEnd);
+    }
 
     // Fetch all workspace members
     const members = await prisma.workspaceMember.findMany({
@@ -102,13 +161,13 @@ export async function POST(req: Request) {
       members.map((m) => [m.user_id, m.user.full_name ?? m.user.email ?? "Unknown"])
     );
 
-    // Compute TPS/AS/total per member via the shared aggregation (batched, timezone-safe)
+    // Compute TPS/AS/total per member via the shared aggregation (batched, timezone-safe);
+    // each month scored independently then averaged across the span
     const memberScores = await computeMemberScores({
       workspaceId,
       memberIds: members.map((m) => m.user_id),
-      year,
-      month,
-      scheduledDays: computedScheduledDays,
+      months,
+      scheduledDaysByMonth,
     });
 
     // Calculate payouts based on provided revenue (may be 0 for draft)
@@ -122,11 +181,8 @@ export async function POST(req: Request) {
       revenue
     );
 
-    const monthNames = [
-      "January","February","March","April","May","June",
-      "July","August","September","October","November","December",
-    ];
-    const label = `${monthNames[month]} ${year}`;
+    const label = months.length === 1 ? monthLabel(start) : `${monthLabel(start)} - ${monthLabel(end)}`;
+    const totalScheduledDays = Object.values(scheduledDaysByMonth).reduce((s, d) => s + d, 0);
 
     // Create the MonthlyClose and all draft MemberMonthlyPayouts in one transaction
     const close = await prisma.$transaction(async (tx) => {
@@ -134,11 +190,13 @@ export async function POST(req: Request) {
         data: {
           workspace_id: workspaceId,
           label,
-          month,
-          year,
-          period_end: effectivePeriodEnd,
+          start_month: start.month,
+          start_year: start.year,
+          month: end.month,
+          year: end.year,
+          period_end: periodEnd,
           total_revenue: revenue,
-          scheduled_days: computedScheduledDays,
+          scheduled_days: totalScheduledDays,
           status: "Draft",
           created_by: session.user.id,
         },
@@ -159,8 +217,9 @@ export async function POST(req: Request) {
             perf_payout: payout?.perfPayout ?? 0,
             final_payout: payout?.finalPayout ?? 0,
             present_days: ms.presentDays,
-            scheduled_days: computedScheduledDays,
+            scheduled_days: ms.scheduledDays,
             multiplier_overrides: "{}",
+            monthly_breakdown: JSON.stringify(ms.monthlyBreakdown),
           };
         }),
       });
