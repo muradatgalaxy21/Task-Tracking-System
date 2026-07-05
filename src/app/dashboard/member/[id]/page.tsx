@@ -36,8 +36,8 @@ import {
 export default function MemberPage() {
   const params = useParams();
   const memberId = params.id as string;
-  const { isAdmin, isOwner, user, refreshKey } = useAuth();
-  const { activeWorkspace } = useWorkspace();
+  const { isAdmin, isOwner, user, refreshKey, loading: authLoading } = useAuth();
+  const { activeWorkspace, wsLoading } = useWorkspace();
 
   const [member, setMember] = useState<Profile | null>(null);
   const [tasks, setTasks] = useState<TaskLedger[]>([]);
@@ -53,6 +53,49 @@ export default function MemberPage() {
   const [penaltyAmount, setPenaltyAmount] = useState("");
   const [penaltyReason, setPenaltyReason] = useState("");
   const [penaltyMonth, setPenaltyMonth] = useState("");
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const currentPoint: MonthPoint = { year: currentYear, month: currentMonth };
+
+  // Safe date-string parser — slices ISO prefix directly to avoid timezone shifts.
+  // Turso returns dates as full ISO strings (e.g. "2024-05-28T19:00:00.000Z");
+  // using new Date() would shift the date in UTC+5/UTC-N timezones.
+  const isoYearMonth = (date: string | Date) => {
+    const s = typeof date === "string" ? date : date.toISOString();
+    const [yr, mo] = s.slice(0, 10).split("-").map(Number);
+    return { year: yr, month: mo - 1, key: `${yr}-${String(mo).padStart(2, "0")}` };
+  };
+
+  // Cumulative open window: from right after the last Finalized close through the
+  // current month. If nothing has ever been closed, fall back to the earliest month
+  // with any task/attendance activity so old unclosed data is included too.
+  let windowStart: MonthPoint;
+  if (lastClosedEnd) {
+    windowStart = addMonths(lastClosedEnd, 1);
+  } else {
+    const activityDates = [
+      ...tasks.map((t) => new Date(t.created_at)),
+      ...attendance.map((a) => new Date(a.date)),
+    ];
+    windowStart =
+      activityDates.length > 0
+        ? (() => {
+            const earliest = new Date(Math.min(...activityDates.map((d) => d.getTime())));
+            return { year: earliest.getFullYear(), month: earliest.getMonth() };
+          })()
+        : currentPoint;
+  }
+  if (compareMonths(windowStart, currentPoint) > 0) windowStart = currentPoint;
+  const openMonths = monthsBetween(windowStart, currentPoint);
+
+  // Track which month's weekly breakdown is selected for display
+  const initialSelectedMonthKey = openMonths.length > 0 
+    ? `${openMonths[openMonths.length - 1].year}-${openMonths[openMonths.length - 1].month}`
+    : `${currentYear}-${currentMonth}`;
+
+  const [selectedBreakdownMonth, setSelectedBreakdownMonth] = useState<string>(initialSelectedMonthKey);
 
   const fetchPenalties = useCallback(async () => {
     if (!activeWorkspace?.id) return;
@@ -70,27 +113,47 @@ export default function MemberPage() {
   // workspace attendance (needed to compute active days in month for AS denominator),
   // and the boundary of the most recent Finalized close (the cumulative window starts
   // right after it; before any close exists, the window covers all available data).
+  // Fetch member profile and workspace performance statistics.
+  // 1. Fetch user profile data independently of the workspace selection.
+  // 2. Fetch workspace tasks, attendance records, monthly closes, and penalties.
+  // 3. Keep loading state active during the API fetch calls.
+  // 4. Ensure loading state resets in all paths, including when no workspace is active.
   const fetchData = useCallback(async () => {
-    if (!activeWorkspace?.id) return;
+    if (wsLoading) return; // Keep loading skeleton active while workspace list is resolving
+
     try {
       setLoading(true);
+
+      // Fetch target member profile independently of the workspace context
+      const memberRes = await fetch(`/api/members?id=${memberId}`);
+      if (!memberRes.ok) {
+        throw new Error("Failed to fetch member");
+      }
+      const memberData = await memberRes.json();
+      setMember(memberData);
+
+      if (!activeWorkspace?.id) {
+        // If user has no active workspace, clear workspace statistics and return early
+        setTasks([]);
+        setAttendance([]);
+        setAllWorkspaceAttendance([]);
+        setLastClosedEnd(null);
+        setPenalties([]);
+        return;
+      }
+
       const workspaceId = activeWorkspace.id;
 
-      const [memberRes, tasksRes, wsAttendanceRes, lastClosedRes] = await Promise.all([
-        fetch(`/api/members?id=${memberId}`),
+      const [tasksRes, wsAttendanceRes, lastClosedRes] = await Promise.all([
         fetch(`/api/tasks?workspaceId=${workspaceId}`),
-        fetch(`/api/attendance?workspaceId=${workspaceId}`), // full workspace attendance — filter client-side
+        fetch(`/api/attendance?workspaceId=${workspaceId}`), // full workspace attendance — filtered client-side
         fetch(`/api/monthly-close/last-closed?workspaceId=${workspaceId}`),
       ]);
 
-      if (!memberRes.ok) throw new Error("Failed to fetch member");
-
-      const memberData = await memberRes.json();
       const allTasks = tasksRes.ok ? await tasksRes.json() : [];
       const wsAttendanceData = wsAttendanceRes.ok ? await wsAttendanceRes.json() : [];
       const lastClosedData = lastClosedRes.ok ? await lastClosedRes.json() : { lastClosedEnd: null };
 
-      setMember(memberData);
       setTasks(allTasks.filter((t: { assignee_id: string }) => t.assignee_id === memberId));
       // Filter workspace attendance to this member's records only
       setAttendance(wsAttendanceData.filter((a: { user_id: string }) => a.user_id === memberId));
@@ -104,7 +167,7 @@ export default function MemberPage() {
     } finally {
       setLoading(false);
     }
-  }, [memberId, activeWorkspace?.id, fetchPenalties]);
+  }, [memberId, activeWorkspace?.id, wsLoading, fetchPenalties]);
 
   const handleSavePenalty = async () => {
     if (!activeWorkspace?.id || !penaltyAmount || !penaltyReason || !penaltyMonth) return;
@@ -163,9 +226,17 @@ export default function MemberPage() {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData, refreshKey, activeWorkspace?.id]);
+  }, [fetchData, refreshKey, activeWorkspace?.id, wsLoading]);
 
-  if (loading) {
+  // Synchronize selected month breakdown with computed default month key.
+  // 1. Listen for changes to the computed default month key.
+  // 2. Set the state to computed key so active tab highlights correctly.
+  useEffect(() => {
+    setSelectedBreakdownMonth(initialSelectedMonthKey);
+  }, [initialSelectedMonthKey]);
+
+  // Show skeleton loader while auth details, workspaces list, or page data are loading.
+  if (authLoading || wsLoading || loading) {
     return (
       <div className="space-y-6">
         <div className="skeleton h-10 w-48" />
@@ -194,43 +265,6 @@ export default function MemberPage() {
   }
 
   const canView = true;
-
-
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-  const currentPoint: MonthPoint = { year: currentYear, month: currentMonth };
-
-  // Safe date-string parser — slices ISO prefix directly to avoid timezone shifts.
-  // Turso returns dates as full ISO strings (e.g. "2024-05-28T19:00:00.000Z");
-  // using new Date() would shift the date in UTC+5/UTC-N timezones.
-  const isoYearMonth = (date: string | Date) => {
-    const s = typeof date === "string" ? date : date.toISOString();
-    const [yr, mo] = s.slice(0, 10).split("-").map(Number);
-    return { year: yr, month: mo - 1, key: `${yr}-${String(mo).padStart(2, "0")}` };
-  };
-
-  // Cumulative open window: from right after the last Finalized close through the
-  // current month. If nothing has ever been closed, fall back to the earliest month
-  // with any task/attendance activity so old unclosed data is included too.
-  let windowStart: MonthPoint;
-  if (lastClosedEnd) {
-    windowStart = addMonths(lastClosedEnd, 1);
-  } else {
-    const activityDates = [
-      ...tasks.map((t) => new Date(t.created_at)),
-      ...attendance.map((a) => new Date(a.date)),
-    ];
-    windowStart =
-      activityDates.length > 0
-        ? (() => {
-            const earliest = new Date(Math.min(...activityDates.map((d) => d.getTime())));
-            return { year: earliest.getFullYear(), month: earliest.getMonth() };
-          })()
-        : currentPoint;
-  }
-  if (compareMonths(windowStart, currentPoint) > 0) windowStart = currentPoint;
-  const openMonths = monthsBetween(windowStart, currentPoint);
 
   // Score each open month independently (same formulas as a monthly close), then
   // average — mirrors how a cumulative MonthlyClose computes TPS/AS across its span.
@@ -289,11 +323,7 @@ export default function MemberPage() {
     };
   });
 
-  // Track which month's weekly breakdown is selected for display
-  const initialSelectedMonthKey = openMonths.length > 0 
-    ? `${openMonths[openMonths.length - 1].year}-${openMonths[openMonths.length - 1].month}`
-    : `${currentYear}-${currentMonth}`;
-  const [selectedBreakdownMonth, setSelectedBreakdownMonth] = useState<string>(initialSelectedMonthKey);
+
 
   // Compute selected month breakdown
   const [selYear, selMonth] = selectedBreakdownMonth.split("-").map(Number);
@@ -396,6 +426,15 @@ export default function MemberPage() {
           <h2 className="text-lg font-semibold text-neutral-800 mb-2">Performance Data Private</h2>
           <p className="text-sm text-neutral-500 max-w-sm mx-auto">
             Stats, scores, and task details are only visible to the member themselves and administrators.
+          </p>
+        </div>
+      ) : !activeWorkspace ? (
+        // Prompt user to select or join a workspace when no active workspace is selected.
+        <div className="glass-card p-8 text-center max-w-md mx-auto">
+          <ShieldAlert className="text-amber-500 mx-auto mb-4" size={32} />
+          <h2 className="text-base font-semibold text-neutral-800 mb-1">No Active Workspace</h2>
+          <p className="text-xs text-neutral-500 leading-relaxed mb-4">
+            You are not currently viewing an active workspace. Please select a workspace from the sidebar or join one to access performance analytics and task logs.
           </p>
         </div>
       ) : (
