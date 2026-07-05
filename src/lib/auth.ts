@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
-import { getCachedRole } from "@/lib/role-cache";
+import { getCachedAuthState } from "@/lib/role-cache";
 import { getResend, buildFrom, isEmailConfigured } from "@/lib/resend";
 
 export const authOptions: NextAuthOptions = {
@@ -78,8 +78,12 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Invalid credentials");
         }
 
+        // Normalize to match how emails are stored at signup — otherwise a
+        // different-cased login would fail to find an existing account.
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email: normalizedEmail },
         });
 
         if (!user || !user.password) {
@@ -91,7 +95,14 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Invalid credentials");
         }
 
-        return user;
+        // Return only the fields NextAuth needs — never let the password hash
+        // flow into the user object that seeds the JWT.
+        return {
+          id: user.id,
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role,
+        };
       },
     }),
 
@@ -161,17 +172,30 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.sub;
         session.user.full_name = token.full_name;
 
-        // Fetch the role through a short-TTL cache to avoid a DB round trip on
-        // every page load, while still picking up role changes within seconds
-        // (see invalidateRoleCache in admin/users/[id]/route.ts for the
-        // immediate-update path).
-        // 1. Fetch user role from cache or database.
-        // 2. Assign role to user session for access control checks.
-        const role = await getCachedRole(token.sub!);
+        // Fetch role + last password-change time through a short-TTL cache to
+        // avoid a DB round trip on every page load, while still picking up role
+        // changes and password resets within seconds (see invalidateRoleCache
+        // in admin/users/[id]/route.ts for the immediate-update path).
+        const authState = await getCachedAuthState(token.sub!);
 
-        if (role) {
-          session.user.role = role;
+        // Reject sessions whose JWT was issued before the user's password was
+        // last changed — a reset invalidates every previously-issued token.
+        // Compare at second granularity (token.iat is seconds) so a login in the
+        // same second as the reset is not spuriously rejected.
+        const issuedAtSec = typeof token.iat === "number" ? token.iat : 0;
+        const changedAtSec =
+          authState?.passwordChangedAt !== null && authState?.passwordChangedAt !== undefined
+            ? Math.floor(authState.passwordChangedAt / 1000)
+            : null;
+        if (!authState || (changedAtSec !== null && issuedAtSec < changedAtSec)) {
+          // Strip identity so downstream requireAuth/requireRole treat this as
+          // unauthenticated, forcing a fresh sign-in.
+          // @ts-expect-error: clearing the custom id field
+          session.user.id = undefined;
+          return session;
         }
+
+        session.user.role = authState.role;
       }
       return session;
     },

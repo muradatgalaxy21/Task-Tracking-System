@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rate-limit";
 
 // Checks whether a reset token is still valid without consuming it.
 // The reset password page calls this on mount so it can show an expired-link
@@ -26,6 +27,10 @@ export async function GET(req: Request) {
 // The token is deleted immediately after a successful update so it cannot be reused.
 export async function POST(req: Request) {
   try {
+    // Throttle reset submissions per IP to prevent token brute-forcing.
+    const rl = await rateLimit("reset-password", getClientIp(req), 10, 15 * 60);
+    if (!rl.success) return tooManyRequests(rl.retryAfter);
+
     const { token, password } = await req.json();
 
     if (!token || !password) {
@@ -42,14 +47,15 @@ export async function POST(req: Request) {
       return new NextResponse("Token is invalid or has expired", { status: 400 });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     // Update the password and delete the token atomically.
     // This guarantees the token cannot be reused even if the client retries.
+    // Stamping password_changed_at invalidates every JWT issued before now.
     await prisma.$transaction([
       prisma.user.update({
         where: { email: record.email },
-        data: { password: hashedPassword },
+        data: { password: hashedPassword, password_changed_at: new Date() },
       }),
       prisma.passwordResetToken.delete({ where: { token } }),
     ]);

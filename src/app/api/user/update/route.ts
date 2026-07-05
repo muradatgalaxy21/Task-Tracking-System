@@ -26,12 +26,10 @@ export async function PATCH(req: Request) {
       dataToUpdate.dob = new Date(dob);
     }
 
-    console.log(`Updating user ${session.user.id} with name: ${full_name}`);
     const updatedUser = await prisma.user.update({
       where: { id: session.user.id },
       data: dataToUpdate,
     });
-    console.log(`Update successful: ${updatedUser.full_name}`);
 
     return NextResponse.json({ success: true, user: updatedUser });
   } catch (error) {

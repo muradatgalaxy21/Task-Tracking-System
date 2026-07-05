@@ -3,20 +3,34 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { writeAuditLog } from "@/lib/audit";
+import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
   try {
+    // Throttle account creation per client IP to blunt automated signup abuse.
+    const rl = await rateLimit("signup", getClientIp(req), 5, 60 * 60);
+    if (!rl.success) return tooManyRequests(rl.retryAfter);
+
     const { email, password, workspaceName, inviteCode } = await req.json();
 
     if (!email || !password) {
       return new NextResponse("Missing required fields", { status: 400 });
     }
 
+    // Normalize the email so casing can never create duplicate accounts or a
+    // mismatch between signup, login, and password-reset lookups.
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    // Basic format check before any DB work.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return new NextResponse("Invalid email address", { status: 400 });
+    }
+
     if (password.length < 8) {
       return new NextResponse("Password must be at least 8 characters", { status: 400 });
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) {
       return new NextResponse("Email already exists", { status: 400 });
     }
@@ -57,10 +71,10 @@ export async function POST(req: Request) {
       }
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.create({
-      data: { email, password: hashedPassword },
+      data: { email: normalizedEmail, password: hashedPassword },
     });
 
     // New workspace: user becomes the Owner

@@ -19,6 +19,21 @@ export async function GET(req: Request): Promise<NextResponse> {
   const workspaceId = searchParams.get("workspaceId");
 
   try {
+    // Enforce isolation — only surface workspace-scoped announcements to members of
+    // that workspace (or an Admin). Global announcements remain visible to everyone.
+    let scopedWorkspaceId: string | null = null;
+    if (workspaceId) {
+      if (hasMinimumRole(session.user.role, "Admin")) {
+        scopedWorkspaceId = workspaceId;
+      } else {
+        const membership = await prisma.workspaceMember.findUnique({
+          where: { workspace_id_user_id: { workspace_id: workspaceId, user_id: session.user.id } },
+          select: { user_id: true },
+        });
+        if (membership) scopedWorkspaceId = workspaceId;
+      }
+    }
+
     const now = new Date();
 
     // 1. Build the filter: active announcements that are not expired.
@@ -29,8 +44,8 @@ export async function GET(req: Request): Promise<NextResponse> {
         OR: [
           // Global announcements (visible to everyone)
           { workspace_id: null },
-          // Workspace-specific announcements
-          ...(workspaceId ? [{ workspace_id: workspaceId }] : []),
+          // Workspace-specific announcements (only when caller is a verified member)
+          ...(scopedWorkspaceId ? [{ workspace_id: scopedWorkspaceId }] : []),
         ],
         // Exclude expired announcements (null expires_at = never expires)
         AND: [

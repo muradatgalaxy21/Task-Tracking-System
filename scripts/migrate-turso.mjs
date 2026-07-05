@@ -227,6 +227,34 @@ async function main() {
       console.log("Announcement table already exists.");
     }
 
+    // 1. Add the password_changed_at column to User if missing.
+    // 2. Used to invalidate JWTs issued before a password reset.
+    if (!userColumns.includes("password_changed_at")) {
+      const addPwChangedSql = `ALTER TABLE "User" ADD COLUMN "password_changed_at" DATETIME`;
+      await runSQL(addPwChangedSql, "Add password_changed_at column to User table");
+    } else {
+      console.log("password_changed_at column already exists on User table.");
+    }
+
+    // 1. Check if the RateLimit table exists.
+    // 2. Create it if missing (backs the DB-backed auth rate limiter).
+    // 3. Add an index on expires_at for cheap cleanup of stale windows.
+    if (!tables.includes("RateLimit")) {
+      const createRateLimit = `
+        CREATE TABLE "RateLimit" (
+          "key" TEXT NOT NULL PRIMARY KEY,
+          "count" INTEGER NOT NULL DEFAULT 0,
+          "expires_at" DATETIME NOT NULL
+        )
+      `;
+      const createIdxExpires = `CREATE INDEX "RateLimit_expires_at_idx" ON "RateLimit"("expires_at")`;
+
+      await runSQL(createRateLimit, "Create RateLimit table");
+      await runSQL(createIdxExpires, "Create index on RateLimit(expires_at)");
+    } else {
+      console.log("RateLimit table already exists.");
+    }
+
     console.log("Migration completed successfully.");
 
   } catch (err) {

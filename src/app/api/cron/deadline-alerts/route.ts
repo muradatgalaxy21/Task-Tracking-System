@@ -1,30 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendDeadlineApproachingEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
+
+// Constant-time comparison so an attacker cannot infer the secret byte-by-byte
+// from response timing. Length-mismatched inputs short-circuit to false.
+function safeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 // GET /api/cron/deadline-alerts
 // Scans for active tasks due within 24 hours and dispatches email/in-app reminders.
 // Wrap execution in standard try-catch blocks to handle potential database or SMTP connection failures.
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    // 1. Verify CRON security token if configured in the environment variables.
+    // 1. Require a CRON secret. This endpoint writes rows and sends email, so it must
+    //    never be publicly triggerable. Missing config = deny (fail closed), not allow.
     const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret) {
-      const authHeader = req.headers.get("Authorization");
-      const { searchParams } = new URL(req.url);
-      const querySecret = searchParams.get("secret");
+    if (!cronSecret) {
+      console.error("CRON_SECRET is not configured — refusing to run deadline-alerts");
+      return NextResponse.json({ error: "Cron secret not configured" }, { status: 503 });
+    }
 
-      const isHeaderValid = authHeader === `Bearer ${cronSecret}`;
-      const isQueryValid = querySecret === cronSecret;
-
-      if (!isHeaderValid && !isQueryValid) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    // 2. Accept the secret only via the Authorization header (query strings leak into
+    //    access logs and Referer headers). Compared in constant time.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    if (!safeEqual(authHeader, `Bearer ${cronSecret}`)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const now = new Date();
+
+    // Opportunistic cleanup: prune expired rate-limit windows so the table does
+    // not grow unbounded. Failure here must not abort the alert run.
+    try {
+      await prisma.rateLimit.deleteMany({ where: { expires_at: { lt: now } } });
+    } catch (cleanupErr) {
+      console.error("RateLimit cleanup failed:", cleanupErr);
+    }
+
     const warningThreshold = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
     const overdueLimit = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
 

@@ -120,6 +120,10 @@ export default function AttendancePage() {
 
   // Upsert all attendance records for the selected date
   const handleSave = async () => {
+    if (!activeWorkspace) {
+      alert("Select a workspace before saving attendance.");
+      return;
+    }
     try {
       setSaving(true);
       setSaved(false);
@@ -138,7 +142,9 @@ export default function AttendancePage() {
       const response = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(upsertRows),
+        // Scope the write to the active workspace so the server can authorize it
+        // and confirm every target user is a member of this workspace.
+        body: JSON.stringify({ workspaceId: activeWorkspace.id, records: upsertRows }),
       });
 
       if (!response.ok) {

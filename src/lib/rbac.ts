@@ -11,13 +11,12 @@ import { hasMinimumRole } from "@/lib/rbac-utils";
 export { hasMinimumRole } from "@/lib/rbac-utils";
 export { canManageBilling, canManageMembers, canCreateTasks, isReadOnly } from "@/lib/rbac-utils";
 
-// Four-partner ownership structure for AI and Beyond
-export const PARTNER_EMAILS = [
-  "murad@ainandbeyond.com",
-  "abdullah@ainandbeyond.com",
-  "mujtaba@ainandbeyond.com",
-  "abdulahad@ainandbeyond.com",
-] as const;
+// Partner (owner) email allowlist, sourced from the PARTNER_EMAILS env var
+// (comma-separated) so real addresses are not hardcoded in the repository.
+export const PARTNER_EMAILS: string[] = (process.env.PARTNER_EMAILS ?? "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
 
 export type SessionResult =
   | { session: Session; error: null }

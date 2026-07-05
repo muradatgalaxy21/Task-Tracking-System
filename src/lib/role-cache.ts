@@ -16,7 +16,11 @@ import { prisma } from "@/lib/prisma";
 
 const ROLE_CACHE_TTL_MS = 30_000;
 
-type CacheEntry = { role: string; expiresAt: number };
+// passwordChangedAt is cached alongside the role so the session callback can
+// reject stale JWTs (issued before a password reset) without a second DB read.
+type CacheEntry = { role: string; passwordChangedAt: number | null; expiresAt: number };
+
+export type CachedAuthState = { role: string; passwordChangedAt: number | null };
 
 const globalForRoleCache = global as unknown as {
   roleCache?: Map<string, CacheEntry>;
@@ -25,17 +29,17 @@ const globalForRoleCache = global as unknown as {
 const cache = globalForRoleCache.roleCache ?? new Map<string, CacheEntry>();
 globalForRoleCache.roleCache = cache;
 
-// Returns the user's current global role, using the cached value if it has
-// not expired. Returns null if the user no longer exists.
-export async function getCachedRole(userId: string): Promise<string | null> {
+// Returns the user's role and last password-change time, using the cached value
+// if it has not expired. Returns null if the user no longer exists.
+export async function getCachedAuthState(userId: string): Promise<CachedAuthState | null> {
   const entry = cache.get(userId);
   if (entry && entry.expiresAt > Date.now()) {
-    return entry.role;
+    return { role: entry.role, passwordChangedAt: entry.passwordChangedAt };
   }
 
   const dbUser = await prisma.user.findUnique({
     where: { id: userId },
-    select: { role: true },
+    select: { role: true, password_changed_at: true },
   });
 
   if (!dbUser) {
@@ -43,8 +47,20 @@ export async function getCachedRole(userId: string): Promise<string | null> {
     return null;
   }
 
-  cache.set(userId, { role: dbUser.role, expiresAt: Date.now() + ROLE_CACHE_TTL_MS });
-  return dbUser.role;
+  const passwordChangedAt = dbUser.password_changed_at?.getTime() ?? null;
+  cache.set(userId, {
+    role: dbUser.role,
+    passwordChangedAt,
+    expiresAt: Date.now() + ROLE_CACHE_TTL_MS,
+  });
+  return { role: dbUser.role, passwordChangedAt };
+}
+
+// Returns the user's current global role, using the cached value if it has
+// not expired. Returns null if the user no longer exists.
+export async function getCachedRole(userId: string): Promise<string | null> {
+  const state = await getCachedAuthState(userId);
+  return state?.role ?? null;
 }
 
 // Clears the cached role for a user. Call this immediately after any direct
