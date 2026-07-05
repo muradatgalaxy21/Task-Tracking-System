@@ -9,6 +9,7 @@ import { STATUS_LABELS } from "@/lib/types";
 import { writeAuditLog } from "@/lib/audit";
 import { sendTaskCreatedEmail } from "@/lib/email";
 import { getCachedWorkspaceTasks, revalidateWorkspaceTasks } from "@/lib/cache";
+import { hasPermission } from "@/lib/rbac-permission";
 
 export const dynamic = "force-dynamic";
 
@@ -88,10 +89,11 @@ export async function POST(req: Request) {
       effectiveRole = resolveEffectiveRole(globalRole, membership.role);
     }
 
-    // Only Managers and above can create tasks
-    if (!hasMinimumRole(effectiveRole, "Manager")) {
+    // Only Managers and above can create tasks (taking dynamic overrides into account)
+    const hasPerm = await hasPermission(session.user.id, workspace_id || "", "task:create", effectiveRole);
+    if (!hasPerm) {
       return NextResponse.json(
-        { error: "Only Managers and above can create tasks" },
+        { error: "Forbidden: insufficient permissions to create task" },
         { status: 403 }
       );
     }
@@ -300,17 +302,21 @@ export async function PATCH(req: Request) {
     }
 
     // Title editing is restricted to Managers and above
-    if (title !== undefined && !isManager) {
-      return NextResponse.json(
-        { error: "Only Managers and above can edit the task title" },
-        { status: 403 }
-      );
+    if (title !== undefined) {
+      const hasTitlePerm = await hasPermission(session.user.id, currentTask.workspace_id || "", "task:edit_title", effectiveRole);
+      if (!hasTitlePerm) {
+        return NextResponse.json(
+          { error: "Only Managers and above can edit the task title" },
+          { status: 403 }
+        );
+      }
     }
 
     // Deadline editing checks: Managers request approval, Admins edit directly
     if (max_deadline !== undefined) {
       // 1. Verify user role: Only Managers and above can edit task deadlines.
-      if (!isManager) {
+      const hasDeadlinePerm = await hasPermission(session.user.id, currentTask.workspace_id || "", "task:edit_deadline", effectiveRole);
+      if (!hasDeadlinePerm) {
         return NextResponse.json(
           { error: "Only Managers and above can edit task deadlines" },
           { status: 403 }
@@ -610,13 +616,13 @@ export async function DELETE(req: Request) {
       effectiveRole = resolveEffectiveRole(globalRole, membership.role);
     }
 
-    const isAdmin    = hasMinimumRole(effectiveRole, "Admin");
-    const isManager  = hasMinimumRole(effectiveRole, "Manager");
+    const hasDeletePerm = await hasPermission(session.user.id, task.workspace_id || "", "task:delete", effectiveRole);
     const isAssignee = task.assignee_id === session.user.id;
     // Deletion is locked once the task enters review or a terminal state
     const isLocked   = ["In Review", "Completed", "Discarded"].includes(task.status);
+    const isManager  = hasMinimumRole(effectiveRole, "Manager");
 
-    if (!isAdmin) {
+    if (!hasDeletePerm) {
       // Members cannot delete tasks at all; Managers can delete their own unlocked tasks
       if (!isManager || !isAssignee || isLocked) {
         return NextResponse.json(

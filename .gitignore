@@ -62,3 +62,5 @@ db-admin.mjs
 
 # User uploads
 /uploads
+
+graphify-out/

@@ -36,3 +36,41 @@ export function resolveEffectiveRole(globalRole: string, workspaceRole: string |
   const localRank  = ROLE_RANK[workspaceRole as UserRole] ?? 0;
   return localRank > globalRank ? workspaceRole : globalRole;
 }
+
+/**
+ * Client-safe permission resolver that takes custom overrides into account.
+ *
+ * 1. Check if there is an explicit client-side override in the active workspace.
+ * 2. Fall back to standard role-based hierarchy values.
+ */
+export function hasPermissionClient(
+  overrides: Record<string, boolean> | undefined | null,
+  permission: string,
+  effectiveRole: string
+): boolean {
+  // 1. Return the explicit allowed flag if present in the overrides map.
+  if (overrides && overrides[permission] !== undefined) {
+    return overrides[permission];
+  }
+
+  // 2. Perform fallback checks based on the default role hierarchy.
+  switch (permission) {
+    case "task:create":
+      return hasMinimumRole(effectiveRole, "Manager");
+    case "task:edit_title":
+      return hasMinimumRole(effectiveRole, "Manager");
+    case "task:edit_deadline":
+      return hasMinimumRole(effectiveRole, "Manager");
+    case "task:edit_metadata":
+      return hasMinimumRole(effectiveRole, "Member");
+    case "task:delete":
+      return hasMinimumRole(effectiveRole, "Admin");
+    case "announcement:manage":
+      return hasMinimumRole(effectiveRole, "Admin");
+    case "finance:view":
+      return hasMinimumRole(effectiveRole, "Admin");
+    default:
+      return false;
+  }
+}
+

@@ -51,6 +51,8 @@ interface MemberPayout {
   base_payout: number;
   perf_payout: number;
   final_payout: number;
+  penalty_deduction: number;
+  highest_score_bonus: number;
   present_days: number;
   scheduled_days: number;
   multiplier_overrides: string;
@@ -740,6 +742,8 @@ export default function MonthEndPage() {
                       <th className="text-center">TPS (/65)</th>
                       <th className="text-center">AS (/35)</th>
                       <th className="text-center">Total (/100)</th>
+                      <th className="text-center">Penalties (PKR)</th>
+                      <th className="text-center">Bonus (PKR)</th>
                       <th className="text-right">Payout (PKR)</th>
                     </tr>
                   </thead>
@@ -903,6 +907,24 @@ function MemberRow({
         <td className="px-4 py-3 text-center">
           <span className="text-sm font-bold text-neutral-800">{payout.total_score.toFixed(1)}</span>
         </td>
+        <td className="px-4 py-3 text-center">
+          {payout.penalty_deduction > 0 ? (
+            <span className="text-sm font-semibold text-red-500">
+              -{payout.penalty_deduction.toLocaleString()}
+            </span>
+          ) : (
+            <span className="text-xs text-neutral-400">—</span>
+          )}
+        </td>
+        <td className="px-4 py-3 text-center">
+          {payout.highest_score_bonus > 0 ? (
+            <span className="text-sm font-semibold text-green-600">
+              +{payout.highest_score_bonus.toLocaleString()}
+            </span>
+          ) : (
+            <span className="text-xs text-neutral-400">—</span>
+          )}
+        </td>
         <td className="px-4 py-3 text-right">
           <span className="text-sm font-bold text-green-600">
             {payout.final_payout > 0 ? payout.final_payout.toLocaleString() : "—"}
@@ -913,7 +935,7 @@ function MemberRow({
       {/* Expanded panel: per-month breakdown (always) + multiplier overrides (Draft only) */}
       {expanded && (
         <tr>
-          <td colSpan={6} className="px-4 pb-3">
+          <td colSpan={8} className="px-4 pb-3">
             <div className="bg-neutral-50/80 border border-neutral-200/60 rounded-xl p-4 animate-fade-in space-y-4">
               {monthlyBreakdown.length > 1 && (
                 <div>

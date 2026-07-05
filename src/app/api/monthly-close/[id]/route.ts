@@ -190,9 +190,36 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       newRevenue
     );
 
-    // Persist the close metadata and every updated payout in a single batched
-    // transaction (array form) rather than one awaited update per member
-    const writes: Prisma.PrismaPromise<unknown>[] = [
+    // 5. Query active penalties in the workspace for the target month range.
+    const penalties = await prisma.penalty.findMany({
+      where: {
+        workspace_id: workspace_id,
+        OR: months.map((m) => ({ month: m.month, year: m.year })),
+      },
+    });
+
+    // 6. Calculate penalty deduction per member, capped at performance payout.
+    const deductions: Record<string, number> = {};
+    for (const p of payoutResults) {
+      const userPenalties = penalties.filter((pen) => pen.user_id === p.memberId);
+      const totalPenaltyAmt = userPenalties.reduce((sum, pen) => sum + pen.amount, 0);
+      deductions[p.memberId] = Math.min(p.perfPayout, totalPenaltyAmt);
+    }
+
+    const totalDeducted = Object.values(deductions).reduce((sum, d) => sum + d, 0);
+
+    // 7. Find member with highest score in the period.
+    let highestScorerId: string | null = null;
+    let maxScore = -1;
+    for (const ms of memberScores) {
+      if (ms.totalScore > maxScore) {
+        maxScore = ms.totalScore;
+        highestScorerId = ms.userId;
+      }
+    }
+
+    // 8. Persist the close metadata and every updated payout in a single transaction.
+    const writes: any[] = [
       prisma.monthlyClose.update({
         where: { id },
         data: { total_revenue: newRevenue, scheduled_days: newScheduledDays },
@@ -203,6 +230,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const payoutRow = payoutByUserId.get(ms.userId);
       if (!payoutRow) continue;
       const payout = payoutResults.find((p) => p.memberId === ms.userId);
+      const isHighest = ms.userId === highestScorerId;
+      const deduction = deductions[ms.userId] ?? 0;
+      const bonus = isHighest ? totalDeducted : 0;
+      const finalPayout = Math.max(0, (payout?.perfPayout ?? 0) - deduction + bonus);
+
       writes.push(
         prisma.memberMonthlyPayout.update({
           where: { id: payoutRow.id },
@@ -212,7 +244,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             total_score: ms.totalScore,
             base_payout: payout?.basePayout ?? 0,
             perf_payout: payout?.perfPayout ?? 0,
-            final_payout: payout?.finalPayout ?? 0,
+            final_payout: Math.round(finalPayout * 100) / 100,
+            penalty_deduction: deduction,
+            highest_score_bonus: bonus,
             present_days: ms.presentDays,
             scheduled_days: ms.scheduledDays,
             multiplier_overrides: JSON.stringify(overridesByUser[ms.userId] ?? {}),

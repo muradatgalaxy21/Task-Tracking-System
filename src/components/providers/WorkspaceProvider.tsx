@@ -9,7 +9,7 @@ import {
   ReactNode,
 } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
-import { hasMinimumRole, resolveEffectiveRole } from "@/lib/rbac-utils";
+import { hasMinimumRole, resolveEffectiveRole, hasPermissionClient } from "@/lib/rbac-utils";
 import type { Workspace } from "@/lib/types";
 
 interface WorkspaceContextType {
@@ -24,6 +24,7 @@ interface WorkspaceContextType {
   setActiveWorkspace: (ws: Workspace) => void;
   refreshWorkspaces: () => Promise<void>;
   wsLoading: boolean;
+  hasPermission: (permission: string) => boolean;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType>({
@@ -35,6 +36,7 @@ const WorkspaceContext = createContext<WorkspaceContextType>({
   setActiveWorkspace: () => {},
   refreshWorkspaces: async () => {},
   wsLoading: true,
+  hasPermission: () => false,
 });
 
 export function useWorkspace() {
@@ -107,6 +109,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const isWorkspaceAdmin  = hasMinimumRole(effectiveRole, "Admin");
   const isWorkspaceManager = hasMinimumRole(effectiveRole, "Manager");
 
+  const hasPermission = useCallback(
+    (permission: string) => {
+      if (!activeWorkspace) return false;
+      const overrides = (activeWorkspace as any).permissions as Record<string, boolean> | undefined;
+      return hasPermissionClient(overrides, permission, effectiveRole);
+    },
+    [activeWorkspace, effectiveRole]
+  );
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -118,6 +129,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setActiveWorkspace,
         refreshWorkspaces: fetchWorkspaces,
         wsLoading,
+        hasPermission,
       }}
     >
       {children}

@@ -19,6 +19,8 @@ import {
   calculateAS,
   calculateTotalScore,
   getActiveDaysInMonth,
+  getCalendarWeekOfMonth,
+  getMultiplier,
 } from "@/lib/calculations";
 import { monthsBetween, addMonths, compareMonths, type MonthPoint } from "@/lib/close-range";
 import {
@@ -26,12 +28,15 @@ import {
   Clock,
   Calendar,
   Zap,
+  ShieldAlert,
+  Trash2,
+  Edit,
 } from "lucide-react";
 
 export default function MemberPage() {
   const params = useParams();
   const memberId = params.id as string;
-  const { isAdmin, user, refreshKey } = useAuth();
+  const { isAdmin, isOwner, user, refreshKey } = useAuth();
   const { activeWorkspace } = useWorkspace();
 
   const [member, setMember] = useState<Profile | null>(null);
@@ -40,6 +45,26 @@ export default function MemberPage() {
   const [allWorkspaceAttendance, setAllWorkspaceAttendance] = useState<DailyAttendance[]>([]);
   const [lastClosedEnd, setLastClosedEnd] = useState<MonthPoint | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Penalty States
+  const [penalties, setPenalties] = useState<any[]>([]);
+  const [showPenaltyModal, setShowPenaltyModal] = useState(false);
+  const [editingPenalty, setEditingPenalty] = useState<any>(null);
+  const [penaltyAmount, setPenaltyAmount] = useState("");
+  const [penaltyReason, setPenaltyReason] = useState("");
+  const [penaltyMonth, setPenaltyMonth] = useState("");
+
+  const fetchPenalties = useCallback(async () => {
+    if (!activeWorkspace?.id) return;
+    try {
+      const res = await fetch(`/api/penalties?workspaceId=${activeWorkspace.id}&userId=${memberId}`);
+      if (res.ok) {
+        setPenalties(await res.json());
+      }
+    } catch (err) {
+      console.error("Failed to fetch penalties:", err);
+    }
+  }, [memberId, activeWorkspace?.id]);
 
   // Fetch member profile, workspace tasks (filtered to member), member attendance, all
   // workspace attendance (needed to compute active days in month for AS denominator),
@@ -71,12 +96,70 @@ export default function MemberPage() {
       setAttendance(wsAttendanceData.filter((a: { user_id: string }) => a.user_id === memberId));
       setAllWorkspaceAttendance(wsAttendanceData);
       setLastClosedEnd(lastClosedData.lastClosedEnd ?? null);
+
+      // Fetch penalties for this member
+      await fetchPenalties();
     } catch (err) {
       console.error("Failed to fetch member data:", err);
     } finally {
       setLoading(false);
     }
-  }, [memberId, activeWorkspace?.id]);
+  }, [memberId, activeWorkspace?.id, fetchPenalties]);
+
+  const handleSavePenalty = async () => {
+    if (!activeWorkspace?.id || !penaltyAmount || !penaltyReason || !penaltyMonth) return;
+    const [yr, mo] = penaltyMonth.split("-").map(Number);
+    const amt = parseFloat(penaltyAmount);
+    if (isNaN(amt) || amt <= 0) {
+      alert("Please enter a valid amount.");
+      return;
+    }
+
+    const method = editingPenalty ? "PATCH" : "POST";
+    const payload = {
+      id: editingPenalty?.id,
+      workspaceId: activeWorkspace.id,
+      userId: memberId,
+      amount: amt,
+      reason: penaltyReason,
+      month: mo - 1,
+      year: yr,
+    };
+
+    try {
+      const res = await fetch("/api/penalties", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        setShowPenaltyModal(false);
+        setEditingPenalty(null);
+        setPenaltyAmount("");
+        setPenaltyReason("");
+        fetchPenalties();
+      } else {
+        const err = await res.json();
+        alert(err.error ?? "Failed to save penalty");
+      }
+    } catch (err) {
+      console.error("Failed to save penalty:", err);
+    }
+  };
+
+  const handleDeletePenalty = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this penalty?")) return;
+    try {
+      const res = await fetch(`/api/penalties?id=${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchPenalties();
+      }
+    } catch (err) {
+      console.error("Failed to delete penalty:", err);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -166,9 +249,55 @@ export default function MemberPage() {
   const asScore = Math.round(avg(monthlyScores.map((m) => m.as)) * 100) / 100;
   const totalScore = calculateTotalScore(tpsScore, asScore);
 
-  // Current-month-only TPS detail (weekly breakdown, task table) — unaffected by
-  // the cumulative window since a "week of month" concept only applies within one month.
-  const tpsResult = calculateTPS(tasks, currentYear, currentMonth);
+  // Cumulative open window task list details:
+  // Shows all tasks completed/not-done within the open cumulative window, plus active tasks.
+  const cumulativeDetails = tasks.filter((task) => {
+    const isTerminal = task.status === "Completed" || task.status === "Not Done";
+    if (isTerminal && task.completed_at) {
+      const { year, month } = isoYearMonth(task.completed_at);
+      return openMonths.some((m) => m.year === year && m.month === month);
+    }
+    return task.status !== "Discarded";
+  }).map((task) => {
+    const isTerminal = task.status === "Completed" || task.status === "Not Done";
+    const storedMultiplier = task.multiplier_earned;
+    
+    let isCounted = false;
+    let weekOfMonth: number | null = null;
+    let monthLabelText = "";
+    if (isTerminal && task.completed_at) {
+      const { year, month } = isoYearMonth(task.completed_at);
+      isCounted = openMonths.some((m) => m.year === year && m.month === month);
+      weekOfMonth = getCalendarWeekOfMonth(new Date(task.completed_at));
+      monthLabelText = new Date(year, month, 1).toLocaleString("default", { month: "short" });
+    }
+    
+    const { multiplier, hoursLate, label } =
+      storedMultiplier != null
+        ? { multiplier: storedMultiplier, hoursLate: 0, label: task.status === "Not Done" ? "Not Done" : "Stored" }
+        : getMultiplier(task.completed_at, task.max_deadline, task.review_submitted_at);
+
+    return {
+      taskId: task.task_id,
+      title: task.title,
+      multiplier: isCounted ? multiplier : 0,
+      hoursLate,
+      label: isCounted ? label : (isTerminal ? "Not in Period" : "Not Completed"),
+      completedAt: task.completed_at,
+      weekOfMonth,
+      monthLabelText,
+    };
+  });
+
+  // Track which month's weekly breakdown is selected for display
+  const initialSelectedMonthKey = openMonths.length > 0 
+    ? `${openMonths[openMonths.length - 1].year}-${openMonths[openMonths.length - 1].month}`
+    : `${currentYear}-${currentMonth}`;
+  const [selectedBreakdownMonth, setSelectedBreakdownMonth] = useState<string>(initialSelectedMonthKey);
+
+  // Compute selected month breakdown
+  const [selYear, selMonth] = selectedBreakdownMonth.split("-").map(Number);
+  const tpsResult = calculateTPS(tasks, selYear, selMonth);
 
   // Cumulative attendance tally across the whole open window, for the summary boxes
   const openWindowAttendance = attendance.filter((a) => {
@@ -195,7 +324,14 @@ export default function MemberPage() {
   const sortedMonths = Object.keys(attendanceByMonth).sort((a, b) => b.localeCompare(a));
 
   // "Not Done" is a closed terminal state — it counts toward closed tasks
-  const completedTasks = tasks.filter((t) => t.status === "Completed" || t.status === "Not Done");
+  const completedTasks = tasks.filter((t) => {
+    const isTerminal = t.status === "Completed" || t.status === "Not Done";
+    if (isTerminal && t.completed_at) {
+      const { year, month } = isoYearMonth(t.completed_at);
+      return openMonths.some((m) => m.year === year && m.month === month);
+    }
+    return false;
+  });
   const inProgressTasks = tasks.filter((t) => t.status === "In Progress");
   const inReviewTasks = tasks.filter((t) => t.status === "In Review");
   const overdueTasks = tasks.filter(
@@ -408,11 +544,34 @@ export default function MemberPage() {
       </div>
 
       {/* Weekly TPS Breakdown */}
-      <div className="glass-card p-5">
-        <h3 className="text-sm font-medium text-neutral-700 mb-4 flex items-center gap-2">
-          <Zap size={16} className="text-amber-500" />
-          Weekly Performance Breakdown
-        </h3>
+      <div className="glass-card p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h3 className="text-sm font-medium text-neutral-700 flex items-center gap-2">
+            <Zap size={16} className="text-amber-500" />
+            Weekly Performance Breakdown
+          </h3>
+          {openMonths.length > 1 && (
+            <div className="flex flex-wrap gap-1.5 bg-neutral-100 p-1 rounded-lg">
+              {openMonths.map((m) => {
+                const key = `${m.year}-${m.month}`;
+                const isSel = selectedBreakdownMonth === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedBreakdownMonth(key)}
+                    className={`text-[10px] font-semibold px-2.5 py-1 rounded-md transition-all ${
+                      isSel
+                        ? "bg-white text-neutral-800 shadow-sm"
+                        : "text-neutral-500 hover:text-neutral-700"
+                    }`}
+                  >
+                    {monthLabel(m)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {tpsResult.weeklyBreakdown.map((week) => (
             <div
@@ -457,6 +616,7 @@ export default function MemberPage() {
             <thead>
               <tr>
                 <th>Task</th>
+                <th className="text-center">Month</th>
                 <th className="text-center">Week</th>
                 <th className="text-center">Status</th>
                 <th className="text-center">Multiplier Earned</th>
@@ -464,13 +624,18 @@ export default function MemberPage() {
               </tr>
             </thead>
             <tbody>
-              {tpsResult.details.map((detail) => {
+              {cumulativeDetails.map((detail) => {
                 const task = tasks.find((t) => t.task_id === detail.taskId);
                 return (
                   <tr key={detail.taskId}>
                     <td className="px-4 py-3">
                       <span className="text-sm text-neutral-800 font-medium">
                         {detail.title}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="text-xs text-neutral-500">
+                        {detail.monthLabelText || "\u2014"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -489,13 +654,13 @@ export default function MemberPage() {
                           detail.multiplier >= 1.0
                             ? "text-green-600"
                             : detail.multiplier >= 0.6
-                            ? "text-amber-600"
+                            ? "text-amber-650 text-yellow-600 font-bold"
                             : detail.multiplier >= 0.4
                             ? "text-orange-500"
                             : detail.multiplier > 0
                             ? "text-red-500"
                             : detail.multiplier < 0
-                            ? "text-red-700 font-bold"
+                            ? "text-red-700 font-bold animate-pulse"
                             : "text-neutral-300"
                         }`}
                       >
@@ -515,9 +680,9 @@ export default function MemberPage() {
                   </tr>
                 );
               })}
-              {tpsResult.details.length === 0 && (
+              {cumulativeDetails.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center py-8 text-neutral-400">
+                  <td colSpan={6} className="text-center py-8 text-neutral-400">
                     No tasks assigned yet.
                   </td>
                 </tr>
@@ -526,6 +691,163 @@ export default function MemberPage() {
           </table>
         </div>
       </div>
+
+      {/* Penalties History Card */}
+      <div className="glass-card overflow-hidden">
+        <div className="px-5 py-4 border-b border-neutral-200/60 flex items-center justify-between">
+          <h3 className="text-sm font-medium text-neutral-700 flex items-center gap-2">
+            <ShieldAlert size={16} className="text-red-500" />
+            Penalties History
+          </h3>
+          {isOwner && (
+            <button
+              onClick={() => {
+                setEditingPenalty(null);
+                setPenaltyAmount("");
+                setPenaltyReason("");
+                setPenaltyMonth(`${currentYear}-${currentMonth + 1}`);
+                setShowPenaltyModal(true);
+              }}
+              className="text-xs font-semibold text-white bg-[#e06b6b] hover:bg-[#c85555] px-2.5 py-1 rounded-md shadow-sm transition-all cursor-pointer"
+            >
+              + Add Penalty
+            </button>
+          )}
+        </div>
+        <div className="overflow-x-auto">
+          {penalties.length > 0 ? (
+            <table className="notion-table">
+              <thead>
+                <tr>
+                  <th>Reason</th>
+                  <th className="text-center">Month</th>
+                  <th className="text-right">Amount (PKR)</th>
+                  {isOwner && <th className="w-24 text-center">Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {penalties.map((p) => {
+                  const mLabel = new Date(p.year, p.month, 1).toLocaleString("default", {
+                    month: "long",
+                    year: "numeric",
+                  });
+                  return (
+                    <tr key={p.id}>
+                      <td className="px-4 py-3 text-sm text-neutral-800 font-medium">{p.reason}</td>
+                      <td className="px-4 py-3 text-center text-xs text-neutral-500">{mLabel}</td>
+                      <td className="px-4 py-3 text-right text-sm font-bold text-red-500">
+                        {p.amount.toLocaleString()} PKR
+                      </td>
+                      {isOwner && (
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                setEditingPenalty(p);
+                                setPenaltyAmount(p.amount.toString());
+                                setPenaltyReason(p.reason);
+                                setPenaltyMonth(`${p.year}-${p.month + 1}`);
+                                setShowPenaltyModal(true);
+                              }}
+                              className="p-1 rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors cursor-pointer"
+                              title="Edit Penalty"
+                            >
+                              <Edit size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleDeletePenalty(p.id)}
+                              className="p-1 rounded text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              title="Delete Penalty"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <div className="py-8 text-center text-neutral-400 text-sm">
+              No penalties recorded for this member.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Penalty Modal */}
+      {showPenaltyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in p-4">
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-2xl w-full max-w-sm p-6 animate-slide-up relative">
+            <h3 className="text-sm font-semibold text-neutral-800 mb-4">
+              {editingPenalty ? "Edit Penalty" : "Add Penalty"}
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] text-neutral-400 uppercase font-semibold tracking-wider block mb-1">
+                  Amount (PKR)
+                </label>
+                <input
+                  type="number"
+                  value={penaltyAmount}
+                  onChange={(e) => setPenaltyAmount(e.target.value)}
+                  placeholder="e.g. 5000"
+                  className="glass-input text-sm"
+                  min={1}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-neutral-400 uppercase font-semibold tracking-wider block mb-1">
+                  Reason
+                </label>
+                <input
+                  type="text"
+                  value={penaltyReason}
+                  onChange={(e) => setPenaltyReason(e.target.value)}
+                  placeholder="e.g. Missed task code submission"
+                  className="glass-input text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-neutral-400 uppercase font-semibold tracking-wider block mb-1">
+                  Month Scoped
+                </label>
+                <select
+                  value={penaltyMonth}
+                  onChange={(e) => setPenaltyMonth(e.target.value)}
+                  className="glass-input text-sm"
+                >
+                  {openMonths.map((m) => (
+                    <option key={`${m.year}-${m.month}`} value={`${m.year}-${m.month + 1}`}>
+                      {monthLabel(m)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2.5 mt-5">
+              <button
+                onClick={handleSavePenalty}
+                disabled={!penaltyAmount || !penaltyReason || !penaltyMonth}
+                className="btn-primary text-xs py-2 flex-1 shadow-sm font-semibold"
+              >
+                Save Penalty
+              </button>
+              <button
+                onClick={() => {
+                  setShowPenaltyModal(false);
+                  setEditingPenalty(null);
+                }}
+                className="px-4 py-2 border border-neutral-200 text-neutral-600 hover:bg-neutral-50 rounded-xl text-xs font-semibold transition-all shadow-sm cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
         </>
       )}
     </div>

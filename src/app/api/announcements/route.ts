@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasMinimumRole, resolveEffectiveRole } from "@/lib/rbac-utils";
+import { hasPermission } from "@/lib/rbac-permission";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +117,8 @@ export async function POST(req: Request): Promise<NextResponse> {
       // Resolve effective role: higher of global and workspace-local
       const effectiveRole = resolveEffectiveRole(user.role, membership?.role);
 
-      if (!hasMinimumRole(effectiveRole, "Admin")) {
+      const hasAnnouncePerm = await hasPermission(session.user.id, workspaceId, "announcement:manage", effectiveRole);
+      if (!hasAnnouncePerm) {
         return NextResponse.json(
           { error: "Only Admins and Owners can create announcements." },
           { status: 403 }

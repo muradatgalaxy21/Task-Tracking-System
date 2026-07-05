@@ -64,7 +64,7 @@ export function getMultiplier(
 // Week 1 = the week containing the 1st of the month.
 // ------------------------------------
 
-function getCalendarWeekOfMonth(date: Date): 1 | 2 | 3 | 4 {
+export function getCalendarWeekOfMonth(date: Date): 1 | 2 | 3 | 4 {
   // Find the Monday of the week containing the 1st of the month
   const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
   // getDay(): 0=Sun, 1=Mon ... 6=Sat. Shift so Mon=0, Sun=6.

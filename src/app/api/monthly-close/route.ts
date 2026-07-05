@@ -181,10 +181,38 @@ export async function POST(req: Request) {
       revenue
     );
 
+    // 5. Query all active penalties in the workspace for the target month range.
+    const penalties = await prisma.penalty.findMany({
+      where: {
+        workspace_id: workspaceId,
+        OR: months.map((m) => ({ month: m.month, year: m.year })),
+      },
+    });
+
+    // 6. Calculate penalty deduction per member, capped at their performance payout.
+    const deductions: Record<string, number> = {};
+    for (const p of payoutResults) {
+      const userPenalties = penalties.filter((pen) => pen.user_id === p.memberId);
+      const totalPenaltyAmt = userPenalties.reduce((sum, pen) => sum + pen.amount, 0);
+      deductions[p.memberId] = Math.min(p.perfPayout, totalPenaltyAmt);
+    }
+
+    const totalDeducted = Object.values(deductions).reduce((sum, d) => sum + d, 0);
+
+    // 7. Find the member with the highest score to distribute the collected penalty pool.
+    let highestScorerId: string | null = null;
+    let maxScore = -1;
+    for (const ms of memberScores) {
+      if (ms.totalScore > maxScore) {
+        maxScore = ms.totalScore;
+        highestScorerId = ms.userId;
+      }
+    }
+
     const label = months.length === 1 ? monthLabel(start) : `${monthLabel(start)} - ${monthLabel(end)}`;
     const totalScheduledDays = Object.values(scheduledDaysByMonth).reduce((s, d) => s + d, 0);
 
-    // Create the MonthlyClose and all draft MemberMonthlyPayouts in one transaction
+    // 8. Create the MonthlyClose and member payouts inside a transaction.
     const close = await prisma.$transaction(async (tx) => {
       const newClose = await tx.monthlyClose.create({
         data: {
@@ -202,11 +230,16 @@ export async function POST(req: Request) {
         },
       });
 
-      // Store draft payout record per member
-      await tx.memberMonthlyPayout.createMany({
-        data: memberScores.map((ms) => {
-          const payout = payoutResults.find((p) => p.memberId === ms.userId);
-          return {
+      // Store draft payout record per member individually to ensure custom penalty logic holds
+      const writes = memberScores.map((ms) => {
+        const payout = payoutResults.find((p) => p.memberId === ms.userId);
+        const isHighest = ms.userId === highestScorerId;
+        const deduction = deductions[ms.userId] ?? 0;
+        const bonus = isHighest ? totalDeducted : 0;
+        const finalPayout = Math.max(0, (payout?.perfPayout ?? 0) - deduction + bonus);
+
+        return tx.memberMonthlyPayout.create({
+          data: {
             close_id: newClose.id,
             workspace_id: workspaceId,
             user_id: ms.userId,
@@ -215,15 +248,18 @@ export async function POST(req: Request) {
             total_score: ms.totalScore,
             base_payout: payout?.basePayout ?? 0,
             perf_payout: payout?.perfPayout ?? 0,
-            final_payout: payout?.finalPayout ?? 0,
+            final_payout: Math.round(finalPayout * 100) / 100,
+            penalty_deduction: deduction,
+            highest_score_bonus: bonus,
             present_days: ms.presentDays,
             scheduled_days: ms.scheduledDays,
             multiplier_overrides: "{}",
             monthly_breakdown: JSON.stringify(ms.monthlyBreakdown),
-          };
-        }),
+          },
+        });
       });
 
+      await Promise.all(writes);
       return newClose;
     });
 

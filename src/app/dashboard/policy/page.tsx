@@ -107,6 +107,12 @@ export default function PolicyPage() {
               >
                 4. Attendance Tiers & Payouts
               </a>
+              <a
+                href="#conduct-penalties"
+                className="block text-xs font-medium text-neutral-600 hover:text-[#e06b6b] transition-colors"
+              >
+                5. Conduct & Penalties
+              </a>
             </nav>
             <div className="pt-4 border-t border-neutral-100 text-[10px] text-neutral-400 leading-normal">
               By using this tracking system, you acknowledge that your task logs, deadlines, attendance check-ins, and performance values are collected and processed for administrative and payouts logic.
@@ -222,7 +228,7 @@ export default function PolicyPage() {
           <section id="attendance-rules" className="glass-card p-6 space-y-4">
             <h2 className="text-base font-bold text-neutral-800 flex items-center gap-2 border-b border-neutral-100 pb-3">
               <Users size={18} className="text-green-600" />
-              4. Attendance Tiers &amp; Payouts logic
+              4. Attendance Tiers &amp; Payouts Logic
             </h2>
             <div className="text-xs text-neutral-600 space-y-3 leading-relaxed">
               <p>
@@ -238,7 +244,34 @@ export default function PolicyPage() {
               </p>
               <ul className="list-disc pl-5 space-y-1 text-neutral-500">
                 <li><strong>60% Retained Treasury</strong>: Retained by the company for overheads and reserves.</li>
-                <li><strong>40% Performance Payout Pool</strong>: Distributed proportionally according to each member&apos;s final composite score (max 100).</li>
+                <li><strong>40% Performance Payout Pool</strong>: Distributed proportionally according to each member&apos;s final composite score (max 100). All of this 40% is allocated entirely to the performance-based pool.</li>
+              </ul>
+            </div>
+          </section>
+
+          {/* Section 5 */}
+          <section id="conduct-penalties" className="glass-card p-6 space-y-4">
+            <h2 className="text-base font-bold text-neutral-800 flex items-center gap-2 border-b border-neutral-100 pb-3">
+              <Shield size={18} className="text-red-500" />
+              5. Work Conduct &amp; Administrative Penalties
+            </h2>
+            <div className="text-xs text-neutral-600 space-y-3 leading-relaxed">
+              <p>
+                The workspace administrators maintain strict guidelines regarding codebase integrity, security, and professional behavior. Overriding adjustments can be applied by the Owner for breaches of these terms:
+              </p>
+              <ul className="list-disc pl-5 space-y-2 text-neutral-500">
+                <li>
+                  <strong>Repository Integrity &amp; Code Deliveries</strong>: All code must be uploaded to the official agency repositories. Failure to submit actual code deliverables after receiving an official overdue notice will lead to a direct penalty deduction from the member&apos;s month-end pool.
+                </li>
+                <li>
+                  <strong>Credential Security &amp; Exposure</strong>: Members are strictly prohibited from storing official API keys, access credentials, or company accounts within their personal environments or public folders. Breaches found after notification will result in corresponding administrative penalties.
+                </li>
+                <li>
+                  <strong>Meeting &amp; Communication Conduct</strong>: Professional demeanor is required during class hours, standups, and meeting hours. Harassment, verbal abuse, or disruptive actions in workspace communications will lead to an immediate penalty.
+                </li>
+                <li>
+                  <strong>Distribution of Penalties</strong>: All deducted penalty amounts are subtracted directly from the offending member&apos;s month-end pool and are re-allocated to the member with the highest overall performance score at the closing of that month.
+                </li>
               </ul>
             </div>
           </section>

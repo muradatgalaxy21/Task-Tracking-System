@@ -327,11 +327,11 @@ export default function Sidebar({ isOpen = false, onClose, collapsed = false, on
             {!collapsed && <span className="text-sm">Sign Out</span>}
           </button>
           {!collapsed && (
-            <div className="px-2 mt-2 pt-2 border-t border-neutral-200/60 text-center">
+            <div className="px-2 mt-3 pt-2 border-t border-neutral-200/60 text-center">
               <Link
                 href="/dashboard/policy"
                 onClick={onClose}
-                className="text-[10px] text-neutral-400 hover:text-warm-500 transition-colors font-medium"
+                className="inline-block w-full px-4 py-2 text-xs font-semibold text-white bg-[#e06b6b] hover:bg-[#c85555] active:scale-98 rounded-lg shadow-sm hover:shadow-md transition-all text-center"
               >
                 Privacy Policy
               </Link>

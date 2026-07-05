@@ -73,6 +73,8 @@ model User {
   invitations_created  Invitation[]      @relation("InvitationsCreated")
   chat_messages        ChatMessage[]
   announcements        Announcement[]
+  penalties            Penalty[]
+  permissions          MemberPermission[]
 }
 
 model Workspace {
@@ -93,6 +95,8 @@ model Workspace {
   chat_messages  ChatMessage[]
   monthly_closes MonthlyClose[]
   announcements  Announcement[]
+  penalties      Penalty[]
+  permissions    MemberPermission[]
 }
 
 model WorkspaceMember {
@@ -361,6 +365,8 @@ model MemberMonthlyPayout {
   base_payout  Float   @default(0)
   perf_payout  Float   @default(0)
   final_payout Float   @default(0)
+  penalty_deduction Float @default(0)
+  highest_score_bonus Float @default(0)
   present_days   Float   @default(0)
   scheduled_days Int     @default(25)
   // JSON string: { [taskId]: overrideMultiplier } — non-destructive override applied at close time
@@ -388,4 +394,35 @@ model RateLimit {
 
   // Lets a cleanup job prune expired windows efficiently
   @@index([expires_at])
+}
+
+model MemberPermission {
+  id           String    @id @default(uuid())
+  workspace_id String
+  user_id      String
+  permission   String
+  allowed      Boolean   @default(true)
+
+  workspace    Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([workspace_id, user_id, permission])
+}
+
+model Penalty {
+  id           String    @id @default(uuid())
+  workspace_id String
+  user_id      String
+  amount       Float
+  reason       String
+  month        Int       // 0-indexed
+  year         Int
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+  created_by   String    // user_id of the Owner
+
+  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  workspace    Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+
+  @@index([workspace_id, user_id, year, month])
 }

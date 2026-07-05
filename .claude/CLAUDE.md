@@ -174,5 +174,4 @@ Server-side read cache backed by Next.js `unstable_cache` (persists across serve
 - Comments belong immediately next to the relevant line, not grouped at the bottom of a function.
 - Import server-only utilities (`requireRole`, Prisma) only in API routes or Server Components — never in `"use client"` files. Use `src/lib/rbac-utils.ts` for client components.
 - `export const dynamic = "force-dynamic"` is required on every API route that reads session data.
-- AI agents will never add themselves as collaborators in GitHub.
 
